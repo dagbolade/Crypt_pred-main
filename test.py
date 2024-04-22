@@ -4,6 +4,7 @@ import streamlit as st
 from matplotlib import pyplot as plt
 from pmdarima import auto_arima
 from sklearn.model_selection import train_test_split
+from scipy.signal import find_peaks
 
 from Data_downolader import CryptoDataDownloader
 from arima import predict_arima, fit_arima_model, find_best_arima
@@ -19,14 +20,16 @@ from eda import plot_time_series, plot_rolling_statistics, plot_boxplot, plot_ca
 from feature_engineering import calculate_sma_ema_rsi
 from lstm_model import prepare_lstm_data, build_lstm_model, train_lstm_model
 from prophet_model import prepare_data_for_prophet, train_prophet_model, plot_forecast
-from trading_signals import generate_trading_signals
+from trading_signals import generate_trading_signals, generate_prophet_trading_signals, plot_forecast_with_signals, \
+    generate_prophet1_trading_signals, plot_forecast_with_signals2, generate_arima_trading_signals, \
+    plot_arima_forecast_with_signals
 
 from xgboost_model import train_xgboost_model
 
 # Set up the sidebar menu
 menu_options = [
     "Overview", "About", "Data Preprocessing", "Exploratory Data Analysis",
-    "Correlation Analysis", "Prediction", "Trading Signals"
+    "Correlation Analysis", "Prediction", "Trading Metrics", "Scenario Analysis", "News"
 ]
 menu_choice = st.sidebar.radio("Menu", menu_options)
 
@@ -240,19 +243,47 @@ def correlation_analysis():
         st.error("Data not available. Please run the preprocessing first.")
 
 
-import plotly.express as px
+def scenario_analysis():
+    st.header("What-If Scenario Analysis")
 
+    if 'selected_cryptos_full' not in st.session_state:
+        st.error("Please perform predictions before running the What-If Scenario Analysis.")
+        return
 
-def generate_lstm_signals(current_price, predicted_prices, threshold=0.01):
-    signals = []
-    for predicted_price in predicted_prices:
-        if predicted_price > current_price * (1 + threshold):
-            signals.append('Buy')  # Buy signal
-        elif predicted_price < current_price * (1 - threshold):
-            signals.append('Sell')  # Sell signal
-        else:
-            signals.append('Hold')  # Hold signal
-    return signals
+    selected_cryptos_full = st.session_state['selected_cryptos_full']
+    unique_tickers = selected_cryptos_full['Ticker'].unique()
+    selected_ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
+
+    model_choice = st.selectbox('Select the Model used for Prediction', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA'])
+    predictions = None
+
+    if st.button('Load Predictions'):
+        predictions = st.session_state.get(f'{model_choice.lower()}_predictions')
+        if predictions is None:
+            st.error("Predictions for the selected model are not available.")
+            return
+
+        st.write(f"Loaded Predictions for {model_choice}:")
+        st.write(predictions)
+
+        days_to_predict = len(predictions)
+        hypothetical_changes = st.slider('Choose hypothetical price change percentage:', -50, 50, 10)
+        last_known_price = predictions[-1]
+
+        st.write(f'Last known price for {selected_ticker}: ${last_known_price:.2f}')
+
+        hypothetical_sell_price = last_known_price * (1 + hypothetical_changes / 100.0)
+        quantity = st.number_input('Quantity of Coins', value=10.0, step=1.0, format="%.2f")
+
+        if st.button(f"Calculate What-If Scenarios for {selected_ticker}"):
+            hypothetical_profits = []
+            for predicted_price in predictions:
+                profit_loss = (hypothetical_sell_price - predicted_price) * quantity
+                hypothetical_profits.append(profit_loss)
+
+            st.write(f'Predicted profit/loss from selling at ${hypothetical_sell_price:.2f}:')
+            for i, profit in enumerate(hypothetical_profits, 1):
+                st.write(f"Day {i}: Hypothetical Profit/Loss = ${profit:.2f}")
 
 
 import plotly.graph_objs as go
@@ -308,6 +339,8 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
+                    st.session_state['lstm_predictions'] = predicted_prices
+
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
 
@@ -338,7 +371,7 @@ def prediction():
                                       xaxis_title='Date', yaxis_title='Price')
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # show signals on the plot
+                    # show trading signals on the plot
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Close'], mode='lines',
                                              name='Historical Close'))
@@ -348,10 +381,24 @@ def prediction():
                         go.Scatter(x=prediction_dates, y=predicted_prices, mode='markers', name='Predicted Close',
                                    marker=dict(color=predicted_signals['Signal'].map(
                                        {'Buy': 'green', 'Sell': 'red', 'Hold': 'blue'}))))
+                    fig.add_hline(y=predicted_prices.max(), line_dash="dot", line_color="green",
+                                  annotation_text=f"Predicted High: ${predicted_prices.max():.2f}",
+                                  annotation_position="bottom right")
+                    fig.add_hline(y=predicted_prices.min(), line_dash="dot", line_color="red",
+                                  annotation_text=f"Predicted Low: ${predicted_prices.min():.2f}",
+                                  annotation_position="top right")
 
                     fig.update_layout(title=f"{ticker} - Historical vs Predicted Close Prices",
                                       xaxis_title='Date', yaxis_title='Price')
                     st.plotly_chart(fig, use_container_width=True)
+
+                    #  display the last day od the prediction only
+                    st.write(f"The predicted price for day {days_to_predict} is ${predicted_prices[-1]:.2f}")
+
+                    # display the predicted high and low as output
+                    st.write(f"Predicted High and Low for day {days_to_predict}:")
+                    st.write(f"Predicted High: ${predicted_prices.max():.2f}")
+                    st.write(f"Predicted Low: ${predicted_prices.min():.2f}")
 
                     # determine the signals and give advice
                     if predicted_signals['Signal'].str.contains('Buy').any():
@@ -361,6 +408,8 @@ def prediction():
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
+                    #find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
+
 
                 elif model_choice == 'Prophet':
                     # Assuming the data is daily data
@@ -369,18 +418,49 @@ def prediction():
                     future = model.make_future_dataframe(periods=days_to_predict)
                     forecast = model.predict(future)
 
-                    # Display forecast
-                    st.write(f"Prophet forecast for the next {days_to_predict} days:")
+                    # Get the last known price from historical data
+                    last_known_price = df_prophet['y'].iloc[-1]
 
-                    # Historical data is everything in df_prophet up to the last actual date
-                    historical = df_prophet[df_prophet['ds'] <= df_prophet['ds'].max()]
+                    # save the forecast in session state
+                    st.session_state['prophet_forecast'] = forecast['yhat'].values
 
-                    # Display the plot for the forecast
-                    fig = plot_forecast(historical, forecast, days_to_predict)
+                    signals = generate_prophet1_trading_signals(forecast)
+
+                    # Display the forecast and signals
+                    st.write("Prophet forecast and trading signals for the next {} days:".format(days_to_predict))
+                    st.write(forecast[['ds', 'yhat']].tail(days_to_predict))
+                    st.write(signals[['ds', 'RSI', 'MA_Short', 'MA_Long', 'Signal']].tail(days_to_predict))
+
+                    # Optionally, plot the results
+                    fig = plot_forecast_with_signals2(signals)
+                    st.info("""
+                        **Trading Signals Explained:**
+
+                        - **Buy Signal**: Indicated by the Short Moving Average (MA Short) crossing above the Long Moving Average (MA Long), suggesting the asset may be entering an uptrend.
+
+                        - **Sell Signal**: Given when the MA Short crosses below the MA Long, indicating a potential downtrend.
+
+                        - **Hold**: No crossovers and the price is relatively stable within the averages, suggesting to maintain the current position without making new trades.
+
+                        _Note: These signals are used in technical analysis but do not guarantee future performance and should not be the only factor considered when making investment decisions.
+                        So in other words, this is not financial advice. Do your own research before investing.
+                    """)
+
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Display the predicted prices
-                    st.write(forecast[['ds', 'yhat']].tail(days_to_predict))
+                    # display the last day od the prediction only
+                    st.write(f"The predicted price for day {days_to_predict} is ${forecast['yhat'].iloc[-1]:.2f}")
+
+                    # Determine the latest signal and give trading advice
+                    latest_signal = signals['Signal'].iloc[-1]
+                    if latest_signal == 'Buy':
+                        st.success(f"🟢 Buy Advice: Consider buying {ticker}.")
+                    elif latest_signal == 'Sell':
+                        st.error(f"🔴 Sell Advice: Consider selling {ticker}.")
+                    else:
+                        st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
+
+                    #find_optimal_buy_sell(ticker, forecast['yhat'], signals)
 
                 elif model_choice == 'BI-LSTM':
                     # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
@@ -411,6 +491,8 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
+                    st.session_state['bi_lstm_predictions'] = predicted_prices
+
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
 
@@ -434,11 +516,11 @@ def prediction():
                     # Plot the historical and predicted prices
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Close'], mode='lines',
-                                                name='Historical Close'))
+                                             name='Historical Close'))
                     fig.add_trace(
                         go.Scatter(x=prediction_dates, y=predicted_prices, mode='lines', name='Predicted Close'))
                     fig.update_layout(title=f"{ticker} - Historical vs Predicted Close Prices",
-                                        xaxis_title='Date', yaxis_title='Price')
+                                      xaxis_title='Date', yaxis_title='Price')
                     st.plotly_chart(fig, use_container_width=True)
 
                     # show trading signals on the plot
@@ -451,10 +533,24 @@ def prediction():
                         go.Scatter(x=prediction_dates, y=predicted_prices, mode='markers', name='Predicted Close',
                                    marker=dict(color=predicted_signals['Signal'].map(
                                        {'Buy': 'green', 'Sell': 'red', 'Hold': 'blue'}))))
+                    fig.add_hline(y=predicted_prices.max(), line_dash="dot", line_color="green",
+                                  annotation_text=f"Predicted High: ${predicted_prices.max():.2f}",
+                                  annotation_position="bottom right")
+                    fig.add_hline(y=predicted_prices.min(), line_dash="dot", line_color="red",
+                                  annotation_text=f"Predicted Low: ${predicted_prices.min():.2f}",
+                                  annotation_position="top right")
 
                     fig.update_layout(title=f"{ticker} - Historical vs Predicted Close Prices",
-                                        xaxis_title='Date', yaxis_title='Price')
+                                      xaxis_title='Date', yaxis_title='Price')
                     st.plotly_chart(fig, use_container_width=True)
+
+                    #  display the last day od the prediction only
+                    st.write(f"The predicted price for day {days_to_predict} is ${predicted_prices[-1]:.2f}")
+
+                    # display the predicted high and low as output
+                    st.write(f"Predicted High and Low for day {days_to_predict}:")
+                    st.write(f"Predicted High: ${predicted_prices.max():.2f}")
+                    st.write(f"Predicted Low: ${predicted_prices.min():.2f}")
 
                     # determine the signals and give advice
                     if predicted_signals['Signal'].str.contains('Buy').any():
@@ -464,9 +560,7 @@ def prediction():
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
-
-
-
+                    # find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
 
                 elif model_choice == 'ARIMA':
                     # reset index to make 'Date' a column
@@ -494,20 +588,135 @@ def prediction():
                                                    periods=days_to_predict, freq='D')
                     # Create forecast DataFrame
                     forecast_df = pd.DataFrame({'Date': forecast_index, 'Forecast': forecast})
-                    # Display the forecast
-                    st.write(f"ARIMA forecast for the next {days_to_predict} days:")
-                    fig = px.line(forecast_df, x='Date', y='Forecast', title=f"{ticker} - ARIMA Forecast")
+
+                    # save the forecast in session state
+                    st.session_state['arima_forecast'] = forecast.values
+
+                    # Use the last known price for generating signals
+                    last_known_price = time_series_data.iloc[-1]
+
+                    # Generate ARIMA trading signals
+                    arima_signals_df = generate_arima_trading_signals(forecast_df, last_known_price)
+
+                    # Display the predicted prices and signals
+                    st.write(f"ARIMA forecast and signals for the next {days_to_predict} days:")
+                    st.dataframe(arima_signals_df[['Date', 'Forecast', 'Signal']])
+
+                    # Plot the forecast with signals
+                    fig = plot_arima_forecast_with_signals(arima_signals_df)
+
                     st.plotly_chart(fig, use_container_width=True)
+
+                    # display the last day od the prediction only
+                    st.write(f"The predicted price for day {days_to_predict} is ${forecast[-1]:.2f}")
+
+                    # Determine the latest signal and give trading advice
+                    latest_signal = arima_signals_df['Signal'].iloc[-1]
+                    if latest_signal == 'Buy':
+                        st.success(f"🟢 Buy Advice: Consider buying {ticker}.")
+                    elif latest_signal == 'Sell':
+                        st.error(f"🔴 Sell Advice: Consider selling {ticker}.")
+                    else:
+                        st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
+
+                    # display a predictive time for possible high and low of a cryptocurrency
+                    st.write(f"Predicted High and Low for day {days_to_predict}:")
+                    st.write(f"Predicted High: ${forecast_df['Forecast'].max():.2f}")
+                    st.write(f"Predicted Low: ${forecast_df['Forecast'].min():.2f}")
+
+                    # show the predicted high and low on the plot
+                    fig.add_hline(y=forecast_df['Forecast'].max(), line_dash="dot", line_color="green",
+                                  annotation_text=f"Predicted High: ${forecast_df['Forecast'].max():.2f}",
+                                  annotation_position="bottom right")
+                    fig.add_hline(y=forecast_df['Forecast'].min(), line_dash="dot", line_color="red",
+                                  annotation_text=f"Predicted Low: ${forecast_df['Forecast'].min():.2f}",
+                                  annotation_position="top right")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    predicted_prices = forecast_df['Forecast'].values
+
+                    #find_optimal_buy_sell(ticker, forecast, arima_signals_df)
 
 
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")
 
 
-def trading_signals():
-    st.header("Trading Signals")
-    # Include code for generating trading signals
-    st.write("Trading signal steps are shown here.")
+# News
+
+import requests
+
+# Set your API key here
+API_KEY = 'pub_3971050fd96dbc2e856ed4aa8aeaa79c531bb'
+
+
+def fetch_news(api_key, crypto_name):
+    url = f'https://newsdata.io/api/1/news?apikey={api_key}&q={crypto_name}&language=en'
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f'Failed to fetch news: {response.status_code}')
+        return None
+
+
+def display_news(news_data):
+    if news_data and 'results' in news_data:
+        for article in news_data['results']:
+            st.subheader(article['title'] if 'title' in article else 'No Title')
+            st.write(article['content'] if 'content' in article else 'No Content Available')
+            if 'link' in article and article['link']:
+                st.markdown(f"[Read more]({article['link']})", unsafe_allow_html=True)
+            st.write("---")  # For a separator line
+    else:
+        st.error('No news data to display or there was an error fetching the news.')
+
+
+if 'selected_cryptos_full' in st.session_state:
+    selected_cryptos_full = st.session_state['selected_cryptos_full']
+    unique_tickers = selected_cryptos_full['Ticker'].unique()
+    ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
+
+    # Button to fetch news
+    if st.button(f"Fetch news for {ticker}"):
+        news_data = fetch_news(API_KEY, ticker)
+        display_news(news_data)
+else:
+    st.error("Cryptocurrency data is not loaded. Please load the data to proceed.")
+
+def find_optimal_buy_sell(ticker, predicted_prices, predicted_signals):
+    optimal_buy_date = None
+    optimal_sell_date = None
+    optimal_profit = -float('inf')  # Initialize with a very low value
+
+    buy_price = None
+    sell_price = None
+
+    for i in range(len(predicted_prices)):
+        if predicted_signals['Signal'].iloc[i] == 'Buy':
+            buy_price = predicted_prices[i]
+            buy_date = predicted_signals.index[i]
+
+        elif predicted_signals['Signal'].iloc[i] == 'Sell' and buy_price is not None:
+            sell_price = predicted_prices[i]
+            sell_date = predicted_signals.index[i]
+
+            potential_profit = sell_price - buy_price
+            if potential_profit > optimal_profit:
+                optimal_profit = potential_profit
+                optimal_buy_date = buy_date
+                optimal_sell_date = sell_date
+
+            buy_price = None
+            sell_price = None
+
+    if optimal_buy_date and optimal_sell_date:
+        st.write(f"For {ticker}:")
+        st.write(f"Optimal Buy Date: {optimal_buy_date}")
+        st.write(f"Optimal Sell Date: {optimal_sell_date}")
+        st.write(f"Anticipated Profit: ${optimal_profit:.2f}")
+    else:
+        st.write(f"No profitable buy-sell opportunity found for {ticker} during the prediction period.")
 
 
 # Conditional navigation based on sidebar choice
@@ -523,32 +732,8 @@ elif menu_choice == "Correlation Analysis":
     correlation_analysis()
 elif menu_choice == "Prediction":
     prediction()
-elif menu_choice == "Trading Signals":
-    trading_signals()
-
-# def train_arima_model(data, ticker, forecast_date):
-#     # Make sure the index is a datetime index
-#     data.index = pd.to_datetime(data.index)
-#     close_prices = data['Close']
-#
-#     # Determine the train size and split the data
-#     train_size = int(len(close_prices) * 0.8)
-#     train, test = close_prices[:train_size], close_prices[train_size:]
-#
-#     # Fit the ARIMA model on the training set
-#     model = auto_arima(train, seasonal=False, stepwise=True,
-#                        suppress_warnings=True, error_action='ignore',
-#                        max_order=None, trace=True)
-#     model.fit(train)
-#
-#     # Forecast period includes the test set and the days to predict
-#     forecast_period = len(test) + forecast_date
-#
-#     # Generate forecast index starting from the day after the last date in the test set
-#     forecast_index = pd.date_range(start=test.index[-1] + pd.Timedelta(days=1), periods=forecast_period, freq='D')
-#
-#     # Forecast the values
-#     forecast_values = model.predict(n_periods=forecast_period)
-#     forecast = pd.Series(forecast_values[-forecast_date:], index=forecast_index, name='Forecast')
-#
-#     return train, test, forecast
+elif menu_choice == "Scenario Analysis":
+    scenario_analysis()
+elif menu_choice == "News":
+    news_data = fetch_news(API_KEY, 'cryptocurrency')
+    display_news(news_data)
