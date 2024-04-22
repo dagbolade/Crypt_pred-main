@@ -84,6 +84,7 @@ def predict_future_prices(model, historical_features, days_to_predict):
 
     # Create a DataFrame with future dates and predictions
     predictions_df = pd.DataFrame({'Date': future_dates, 'Predicted_Close': future_predictions})
+    predictions_df.set_index('Date', inplace=True)
 
     return predictions_df
 

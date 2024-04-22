@@ -22,11 +22,11 @@ def generate_trading_signals(data, last_known_price, rsi_period=14, sentiment_th
 
     # Calculate Moving Averages using the 'Predicted_Close' column
     data['MA_Short'] = data['Predicted_Close'].rolling(window=7).mean()
-    data['MA_Long'] = data['Predicted_Close'].rolling(window=30).mean()
+    data['MA_Long'] = data['Predicted_Close'].rolling(window=30).mean().fillna(0)
 
-    # Generate signals based on RSI and Moving Averages
-    # data['Signal'] = np.where((data['RSI'] < 30) & (data['MA_Short'] > data['MA_Long']), 'Buy',
-    #                           np.where((data['RSI'] > 70) & (data['MA_Short'] < data['MA_Long']), 'Sell', 'Hold'))
+    # Generate signals based on RSI and Moving Averages data['Signal'] = np.where((data['RSI'] < 30) & (data[
+    # 'MA_Short'] > data['MA_Long']), 'Buy', np.where((data['RSI'] > 70) & (data['MA_Short'] < data['MA_Long']),
+    # 'Sell', 'Hold', 'Hold'))
 
     # Generate signals based on the comparison between the last known price and the predicted price
     data['Signal'] = np.where((last_known_price < data['Predicted_Close'] * (1 - sentiment_threshold)), 'Buy',
