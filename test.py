@@ -20,16 +20,17 @@ from eda import plot_time_series, plot_rolling_statistics, plot_boxplot, plot_ca
 from feature_engineering import calculate_sma_ema_rsi
 from lstm_model import prepare_lstm_data, build_lstm_model, train_lstm_model
 from prophet_model import prepare_data_for_prophet, train_prophet_model, plot_forecast
-from trading_signals import generate_trading_signals, generate_prophet_trading_signals, plot_forecast_with_signals, \
+from trading_signals import generate_trading_signals, \
     generate_prophet1_trading_signals, plot_forecast_with_signals2, generate_arima_trading_signals, \
-    plot_arima_forecast_with_signals
+    plot_arima_forecast_with_signals, generate_lstm_trading_signals
 
-from xgboost_model import train_xgboost_model
+from xgboost_model import train_xgboost_model, preprocess_data, \
+    forecast_xgboost
 
 # Set up the sidebar menu
 menu_options = [
     "Overview", "About", "Data Preprocessing", "Exploratory Data Analysis",
-    "Correlation Analysis", "Prediction", "Trading Metrics", "Scenario Analysis", "News"
+    "Correlation Analysis", "Prediction", "Highest Return Prediction", "Trading Metrics", "News"
 ]
 menu_choice = st.sidebar.radio("Menu", menu_options)
 
@@ -243,51 +244,14 @@ def correlation_analysis():
         st.error("Data not available. Please run the preprocessing first.")
 
 
-def scenario_analysis():
-    st.header("What-If Scenario Analysis")
-
-    if 'selected_cryptos_full' not in st.session_state:
-        st.error("Please perform predictions before running the What-If Scenario Analysis.")
-        return
-
-    selected_cryptos_full = st.session_state['selected_cryptos_full']
-    unique_tickers = selected_cryptos_full['Ticker'].unique()
-    selected_ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
-
-    model_choice = st.selectbox('Select the Model used for Prediction', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA'])
-    predictions = None
-
-    if st.button('Load Predictions'):
-        predictions = st.session_state.get(f'{model_choice.lower()}_predictions')
-        if predictions is None:
-            st.error("Predictions for the selected model are not available.")
-            return
-
-        st.write(f"Loaded Predictions for {model_choice}:")
-        st.write(predictions)
-
-        days_to_predict = len(predictions)
-        hypothetical_changes = st.slider('Choose hypothetical price change percentage:', -50, 50, 10)
-        last_known_price = predictions[-1]
-
-        st.write(f'Last known price for {selected_ticker}: ${last_known_price:.2f}')
-
-        hypothetical_sell_price = last_known_price * (1 + hypothetical_changes / 100.0)
-        quantity = st.number_input('Quantity of Coins', value=10.0, step=1.0, format="%.2f")
-
-        if st.button(f"Calculate What-If Scenarios for {selected_ticker}"):
-            hypothetical_profits = []
-            for predicted_price in predictions:
-                profit_loss = (hypothetical_sell_price - predicted_price) * quantity
-                hypothetical_profits.append(profit_loss)
-
-            st.write(f'Predicted profit/loss from selling at ${hypothetical_sell_price:.2f}:')
-            for i, profit in enumerate(hypothetical_profits, 1):
-                st.write(f"Day {i}: Hypothetical Profit/Loss = ${profit:.2f}")
-
-
 import plotly.graph_objs as go
-
+# Feature engineering with lagged features
+def create_lagged_features(data, lag_periods):
+    lagged_data = data.copy()
+    for lag in lag_periods:
+        lagged_data[f'Close_lag_{lag}'] = lagged_data['Close'].shift(lag)
+    lagged_data.dropna(inplace=True)
+    return lagged_data
 
 def prediction():
     st.header("Prediction")
@@ -296,7 +260,8 @@ def prediction():
         selected_cryptos_full = st.session_state['selected_cryptos_full']
 
         # Allowing user to select a model
-        model_choice = st.selectbox('Select Prediction Model', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA'])
+        model_choice = st.selectbox('Select Prediction Model',
+                                    ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
 
         # User input for selecting cryptocurrency
         ticker = st.selectbox('Select a Cryptocurrency for Prediction:', selected_cryptos_full['Ticker'].unique())
@@ -325,7 +290,7 @@ def prediction():
 
                     # Predict using the last available data to generate predictions for multiple days ahead
                     predictions = []
-                    current_sequence = X_test[-1:]
+                    current_sequence = X_test[-1].reshape(1, X_test.shape[1], X_test.shape[2])
 
                     for _ in range(days_to_predict):  # Number of days you want to predict
                         # Predict the next step and get the last predicted price
@@ -333,12 +298,11 @@ def prediction():
                         last_predicted_price = scaler.inverse_transform(current_prediction).flatten()[0]
                         predictions.append(last_predicted_price)
 
-                        # Update the sequence with the last predicted price
-                        current_sequence = np.roll(current_sequence, -1)
-                        current_sequence[:, -1, :] = current_prediction
+                        # Update the sequence for the next prediction
+                        current_sequence = np.roll(current_sequence, -1, axis=1)
+                        current_sequence[0, -1, :] = current_prediction.flatten()
 
                     predicted_prices = np.array(predictions)
-
                     st.session_state['lstm_predictions'] = predicted_prices
 
                     # Get the last known price from the historical data
@@ -352,7 +316,7 @@ def prediction():
                     predicted_prices_df = pd.DataFrame({'Predicted_Close': predicted_prices}, index=prediction_dates)
 
                     # Generate trading signals based on the predicted prices
-                    predicted_signals = generate_trading_signals(predicted_prices_df, last_known_price)
+                    predicted_signals = generate_lstm_trading_signals(predicted_prices_df, last_known_price)
 
                     # Concatenate historical close prices with predicted prices
                     combined_data = pd.concat([crypto_data[['Close']], predicted_prices_df['Predicted_Close']])
@@ -635,7 +599,139 @@ def prediction():
 
                     predicted_prices = forecast_df['Forecast'].values
 
-                    #find_optimal_buy_sell(ticker, forecast, arima_signals_df)
+                    #find_optimal_buy_sell(ticker, forecast, arima_signals_df
+
+                elif model_choice == 'RandomForest':
+                    from sklearn.ensemble import RandomForestRegressor
+
+                    features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
+                    target = 'Close'
+                    preprocessed_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
+
+                    # Create lagged features
+                    lag_periods = [1, 2, 3, 4, 5]  # Adjust the lag periods as needed
+                    lagged_data = create_lagged_features(preprocessed_data, lag_periods)
+
+                    # Update the features list to include lagged features
+                    features += [f'Close_lag_{lag}' for lag in lag_periods]
+
+                    X = lagged_data[features]
+                    y = lagged_data[target]
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                    model = RandomForestRegressor(n_estimators=100, random_state=42)
+                    model.fit(X_train, y_train)
+
+                    future_data = lagged_data[features].tail(days_to_predict)
+                    future_predictions = model.predict(future_data)
+
+                    # Display the predicted prices for the next days
+                    st.write(f"Predicted prices for the next {days_to_predict} days with Random Forest:")
+                    for i, price in enumerate(future_predictions, start=1):
+                        st.write(f"Day {i}: {price:.2f}")
+
+                    predicted_prices = np.array(future_predictions)
+                    # Calculate the prediction dates starting from the day after the last date in the data
+                    last_date = preprocessed_data['Date'].iloc[-1]
+                    prediction_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days_to_predict)
+                    # Create a DataFrame with the predicted prices and corresponding dates
+                    predicted_prices_df = pd.DataFrame({'Date': prediction_dates, 'Predicted_Price': predicted_prices})
+                    # Display the predicted prices DataFrame
+                    st.write("Predicted Prices:")
+                    st.dataframe(predicted_prices_df)
+                    # Rename the 'Predicted_Price' column to 'Predicted_Close'
+                    predicted_prices_df = predicted_prices_df.rename(columns={'Predicted_Price': 'Predicted_Close'})
+                    # Generate trading signals based on the predicted prices
+                    trading_signals = generate_trading_signals(predicted_prices, preprocessed_data[target].iloc[-1])
+                    # Display the trading signals
+                    st.write("Trading Signals:")
+                    st.dataframe(trading_signals)
+                    # Plot the predicted prices
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Scatter(x=preprocessed_data['Date'], y=preprocessed_data[target], name='Actual Price'))
+                    fig.add_trace(go.Scatter(x=prediction_dates, y=predicted_prices, name='Predicted Price'))
+                    fig.update_layout(title=f"{ticker} - Actual vs Predicted Prices", xaxis_title="Date",
+                                      yaxis_title="Price")
+                    st.plotly_chart(fig)
+                    # Display the predicted high and low prices
+                    st.write(f"Predicted High Price: {predicted_prices.max():.2f}")
+                    st.write(f"Predicted Low Price: {predicted_prices.min():.2f}")
+                    # Provide investment advice based on the predicted prices and trading signals
+                    if trading_signals['Signal'].iloc[-1] == 'Buy':
+                        st.success(
+                            f"Investment Advice: Consider buying {ticker} based on the predicted price increase.")
+                    elif trading_signals['Signal'].iloc[-1] == 'Sell':
+                        st.warning(
+                            f"Investment Advice: Consider selling {ticker} based on the predicted price decrease.")
+                    else:
+                        st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
+
+                elif model_choice == 'CatBoost':
+                    from catboost import CatBoostRegressor
+
+                    features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
+                    target = 'Close'
+                    preprocessed_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
+
+                    # Create lagged features
+                    lag_periods = [1, 2, 3, 4, 5]  # Adjust the lag periods as needed
+                    lagged_data = create_lagged_features(preprocessed_data, lag_periods)
+
+                    # Update the features list to include lagged features
+                    features += [f'Close_lag_{lag}' for lag in lag_periods]
+
+                    X = lagged_data[features]
+                    y = lagged_data[target]
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                    model = CatBoostRegressor(iterations=100, learning_rate=0.1, random_seed=42)
+                    model.fit(X_train, y_train)
+
+                    future_data = lagged_data[features].tail(days_to_predict)
+                    future_predictions = model.predict(future_data)
+
+                    # Display the predicted prices for the next days
+                    st.write(f"Predicted prices for the next {days_to_predict} days with CatBoost:")
+                    for i, price in enumerate(future_predictions, start=1):
+                        st.write(f"Day {i}: {price:.2f}")
+
+                    predicted_prices = np.array(future_predictions)
+                    # Calculate the prediction dates starting from the day after the last date in the data
+                    last_date = preprocessed_data['Date'].iloc[-1]
+                    prediction_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days_to_predict)
+                    # Create a DataFrame with the predicted prices and corresponding dates
+                    predicted_prices_df = pd.DataFrame({'Date': prediction_dates, 'Predicted_Price': predicted_prices})
+                    # Display the predicted prices DataFrame
+                    st.write("Predicted Prices:")
+                    st.dataframe(predicted_prices_df)
+                    # Rename the 'Predicted_Price' column to 'Predicted_Close'
+                    predicted_prices_df = predicted_prices_df.rename(columns={'Predicted_Price': 'Predicted_Close'})
+                    # Generate trading signals based on the predicted prices
+                    trading_signals = generate_trading_signals(predicted_prices, preprocessed_data[target].iloc[-1])
+                    # Display the trading signals
+                    st.write("Trading Signals:")
+                    st.dataframe(trading_signals)
+                    # Plot the predicted prices
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Scatter(x=preprocessed_data['Date'], y=preprocessed_data[target], name='Actual Price'))
+                    fig.add_trace(go.Scatter(x=prediction_dates, y=predicted_prices, name='Predicted Price'))
+                    fig.update_layout(title=f"{ticker} - Actual vs Predicted Prices", xaxis_title="Date",
+                                      yaxis_title="Price")
+                    st.plotly_chart(fig)
+                    # Display the predicted high and low prices
+                    st.write(f"Predicted High Price: {predicted_prices.max():.2f}")
+                    st.write(f"Predicted Low Price: {predicted_prices.min():.2f}")
+                    # Provide investment advice based on the predicted prices and trading signals
+                    if trading_signals['Signal'].iloc[-1] == 'Buy':
+                        st.success(
+                            f"Investment Advice: Consider buying {ticker} based on the predicted price increase.")
+                    elif trading_signals['Signal'].iloc[-1] == 'Sell':
+                        st.warning(
+                            f"Investment Advice: Consider selling {ticker} based on the predicted price decrease.")
+                    else:
+                        st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
 
     else:
@@ -650,39 +746,54 @@ import requests
 API_KEY = 'pub_3971050fd96dbc2e856ed4aa8aeaa79c531bb'
 
 
-def fetch_news(api_key, crypto_name):
-    url = f'https://newsdata.io/api/1/news?apikey={api_key}&q={crypto_name}&language=en'
+def fetch_news(api_key, query):
+    url = f'https://newsdata.io/api/1/news?apikey={api_key}&q={query}&language=en'
     response = requests.get(url)
     if response.status_code == 200:
-        return response.json()
+        news_data = response.json()
+        return news_data['results'] if 'results' in news_data else []
     else:
         st.error(f'Failed to fetch news: {response.status_code}')
-        return None
+        return []
 
 
-def display_news(news_data):
-    if news_data and 'results' in news_data:
-        for article in news_data['results']:
+def display_news(articles):
+    if articles:
+        for article in articles:
             st.subheader(article['title'] if 'title' in article else 'No Title')
             st.write(article['content'] if 'content' in article else 'No Content Available')
             if 'link' in article and article['link']:
                 st.markdown(f"[Read more]({article['link']})", unsafe_allow_html=True)
             st.write("---")  # For a separator line
     else:
-        st.error('No news data to display or there was an error fetching the news.')
+        st.error('No news articles found.')
 
 
-if 'selected_cryptos_full' in st.session_state:
-    selected_cryptos_full = st.session_state['selected_cryptos_full']
-    unique_tickers = selected_cryptos_full['Ticker'].unique()
-    ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
+def news_page(api_key):
+    st.info("This page allows you to search for news articles related to cryptocurrencies.")
+    search_query = st.text_input("Search for news on any topic:")
+    search_button = st.button('Search')
 
-    # Button to fetch news
-    if st.button(f"Fetch news for {ticker}"):
-        news_data = fetch_news(API_KEY, ticker)
-        display_news(news_data)
-else:
-    st.error("Cryptocurrency data is not loaded. Please load the data to proceed.")
+    if search_button and search_query:
+        articles = fetch_news(api_key, search_query)
+        display_news(articles)
+    elif search_button:
+        st.error("Please enter a search term.")
+
+    # Check if selected cryptos are available
+    if 'selected_cryptos_full' in st.session_state:
+        selected_cryptos_full = st.session_state['selected_cryptos_full']
+        unique_tickers = selected_cryptos_full['Ticker'].unique()
+        st.info("You can also select a cryptocurrency to fetch news related to it.")
+        ticker = st.selectbox('Or select a Cryptocurrency for news:', unique_tickers, index=0)
+        fetch_button = st.button(f"Fetch news for {ticker}")
+
+        if fetch_button:
+            articles = fetch_news(api_key, ticker)
+            display_news(articles)
+    else:
+        st.error("Cryptocurrency data is not loaded. Please load the data to proceed.")
+
 
 def find_optimal_buy_sell(ticker, predicted_prices, predicted_signals):
     optimal_buy_date = None
@@ -719,6 +830,127 @@ def find_optimal_buy_sell(ticker, predicted_prices, predicted_signals):
         st.write(f"No profitable buy-sell opportunity found for {ticker} during the prediction period.")
 
 
+def highest_return_prediction():
+    st.header("Highest Return Prediction")
+
+    if 'selected_cryptos_full' in st.session_state:
+        selected_cryptos_full = st.session_state['selected_cryptos_full']
+
+        # Allowing user to select a model
+        model_choice = st.selectbox('Select Prediction Model', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA'])
+
+        # User input for selecting cryptocurrencies
+        selected_tickers = st.multiselect('Select Cryptocurrencies for Prediction:',
+                                          selected_cryptos_full['Ticker'].unique())
+        days_to_predict = st.number_input('Enter the number of days to predict:', min_value=1, max_value=365, value=30)
+
+        if st.button('Predict Highest Return'):
+            with st.spinner(f'Training {model_choice} model and making predictions...'):
+                predicted_returns = {}
+
+                for ticker in selected_tickers:
+                    # Filter data for the selected cryptocurrency
+                    crypto_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
+
+                    if model_choice == 'LSTM':
+
+                        X, y, scaler = prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
+                        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                        model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+                        model, history = train_lstm_model(model, X_train, y_train, X_test, y_test)
+
+                        # reset index to make 'Date' a column
+                        crypto_data = crypto_data.reset_index()
+                        # Ensure the crypto_data index is a DatetimeIndex
+                        crypto_data.index = pd.to_datetime(crypto_data['Date'])
+
+                        # Predict using the last available data to generate predictions for multiple days ahead
+                        predictions = []
+                        current_sequence = X_test[-1:]
+
+                        for _ in range(days_to_predict):  # Number of days you want to predict
+                            # Predict the next step and get the last predicted price
+                            current_prediction = model.predict(current_sequence)
+                            last_predicted_price = scaler.inverse_transform(current_prediction).flatten()[0]
+                            predictions.append(last_predicted_price)
+
+                            # Update the sequence with the last predicted price
+                            current_sequence = np.roll(current_sequence, -1)
+                            current_sequence[:, -1, :] = current_prediction
+
+                        predicted_prices = np.array(predictions)
+
+                    elif model_choice == 'Prophet':
+
+                        df_prophet = prepare_data_for_prophet(crypto_data, ticker)
+                        model = train_prophet_model(df_prophet)
+                        future = model.make_future_dataframe(periods=days_to_predict)
+                        forecast = model.predict(future)
+
+                        predicted_prices = forecast['yhat'].values
+
+                    elif model_choice == 'BI-LSTM':
+
+                        X, y, scaler = prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
+                        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                        bi_model = build_bi_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+                        bi_model, history = train_bi_lstm_model(bi_model, X_train, y_train, X_test, y_test)
+
+                        # reset index to make 'Date' a column
+                        crypto_data = crypto_data.reset_index()
+                        # Ensure the crypto_data index is a DatetimeIndex
+                        crypto_data.index = pd.to_datetime(crypto_data['Date'])
+
+                        # Predict using the last available data to generate predictions for multiple days ahead
+                        predictions = []
+                        current_sequence = X_test[-1:]
+
+                        for _ in range(days_to_predict):  # Number of days you want to predict
+                            # Predict the next step and get the last predicted price
+                            current_prediction = bi_model.predict(current_sequence)
+                            last_predicted_price = scaler.inverse_transform(current_prediction).flatten()[0]
+                            predictions.append(last_predicted_price)
+
+                            # Update the sequence with the last predicted price
+                            current_sequence = np.roll(current_sequence, -1)
+                            current_sequence[:, -1, :] = current_prediction
+                        predicted_prices = np.array(predictions)
+
+                    elif model_choice == 'ARIMA':
+
+                        time_series_data = crypto_data.reset_index()
+                        time_series_data.index = pd.to_datetime(time_series_data['Date'])
+                        time_series_data = time_series_data['Close']
+                        time_series_data.index = pd.to_datetime(time_series_data.index)
+
+                        auto_model = find_best_arima(time_series_data, seasonal=False)
+                        model_fit = fit_arima_model(time_series_data, auto_model.order)
+                        forecast = predict_arima(model_fit, days_to_predict)
+                        predicted_prices = forecast
+
+                    # Calculate the predicted return for the selected cryptocurrency
+                    predicted_return = (predicted_prices[-1] - predicted_prices[0]) / predicted_prices[0] * 100
+                    predicted_returns[ticker] = predicted_return
+
+                # Find the cryptocurrency with the highest predicted return
+                best_crypto = max(predicted_returns, key=predicted_returns.get)
+                best_return = predicted_returns[best_crypto]
+
+                st.write(f"Based on the {model_choice} model predictions for the next {days_to_predict} days:")
+                st.write(f"The cryptocurrency with the highest predicted return is: {best_crypto}")
+                st.write(f"Predicted return for {best_crypto}: {best_return:.2f}%")
+
+                # Display predicted returns for all selected cryptocurrencies
+                st.write("Predicted returns for all selected cryptocurrencies:")
+                for ticker, return_percentage in predicted_returns.items():
+                    st.write(f"{ticker}: {return_percentage:.2f}%")
+
+    else:
+        st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")
+
+
 # Conditional navigation based on sidebar choice
 if menu_choice == "Overview":
     show_overview()
@@ -732,8 +964,7 @@ elif menu_choice == "Correlation Analysis":
     correlation_analysis()
 elif menu_choice == "Prediction":
     prediction()
-elif menu_choice == "Scenario Analysis":
-    scenario_analysis()
+elif menu_choice == "Highest Return Prediction":
+    highest_return_prediction()
 elif menu_choice == "News":
-    news_data = fetch_news(API_KEY, 'cryptocurrency')
-    display_news(news_data)
+    news_page(API_KEY)

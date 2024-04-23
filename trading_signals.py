@@ -1,79 +1,117 @@
 import numpy as np
+import pandas as pd
 
 
-def calculate_rsi(prices, periods=14):
-    # Calculate RSI using the prices Series
-    delta = prices.diff()
-    gain = (delta.mask(delta < 0, 0)).fillna(0)
-    loss = (-delta.mask(delta > 0, 0)).fillna(0)
-
+def calculate_rsi(data, periods=14):
+    close_prices = pd.Series(data)
+    delta = close_prices.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(window=periods).mean()
     avg_loss = loss.rolling(window=periods).mean()
-
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-
     return rsi
 
 
-def generate_trading_signals(data, last_known_price, rsi_period=14, sentiment_threshold=0.1):
-    # Calculate RSI using the 'Predicted_Close' column
-    data['RSI'] = calculate_rsi(data['Predicted_Close'], periods=rsi_period)
+def generate_lstm_trading_signals(predicted_prices_df, last_known_price, rsi_period=14, ma_short_period=50,
+                                  ma_long_period=200):
+    # Extract the predicted prices from the DataFrame
+    predicted_prices = predicted_prices_df['Predicted_Close'].values
 
-    # Calculate Moving Averages using the 'Predicted_Close' column
-    data['MA_Short'] = data['Predicted_Close'].rolling(window=7).mean()
-    data['MA_Long'] = data['Predicted_Close'].rolling(window=30).mean().fillna(0)
+    # Calculate RSI on predicted prices
+    predicted_prices_df['RSI'] = calculate_rsi(predicted_prices, periods=rsi_period)
 
-    # Generate signals based on RSI and Moving Averages data['Signal'] = np.where((data['RSI'] < 30) & (data[
-    # 'MA_Short'] > data['MA_Long']), 'Buy', np.where((data['RSI'] > 70) & (data['MA_Short'] < data['MA_Long']),
-    # 'Sell', 'Hold', 'Hold'))
+    # Calculate short-term and long-term moving averages on predicted prices
+    predicted_prices_df['MA_Short'] = predicted_prices_df['Predicted_Close'].rolling(window=ma_short_period).mean()
+    predicted_prices_df['MA_Long'] = predicted_prices_df['Predicted_Close'].rolling(window=ma_long_period).mean()
 
-    # Generate signals based on the comparison between the last known price and the predicted price
-    data['Signal'] = np.where((last_known_price < data['Predicted_Close'] * (1 - sentiment_threshold)), 'Buy',
-                              np.where((last_known_price > data['Predicted_Close'] * (1 + sentiment_threshold)), 'Sell',
-                                       'Hold'))
-    # Drop rows where 'Signal' is NaN if you don't want 'Hold' signals to appear
-    data.dropna(subset=['Signal'], inplace=True)
-    return data
+    # Generate signals
+    signals = []
+    for i in range(len(predicted_prices_df)):
+        if i == 0:
+            signals.append(None)
+        else:
+            if (predicted_prices_df['RSI'].iloc[i] > 70) and (
+                    predicted_prices_df['Predicted_Close'].iloc[i] < predicted_prices_df['Predicted_Close'].iloc[
+                i - 1]):
+                signals.append('Sell')
+            elif (predicted_prices_df['RSI'].iloc[i] < 30) and (
+                    predicted_prices_df['Predicted_Close'].iloc[i] > predicted_prices_df['Predicted_Close'].iloc[
+                i - 1]):
+                signals.append('Buy')
+            elif predicted_prices_df['MA_Short'].iloc[i] > predicted_prices_df['MA_Long'].iloc[i]:
+                signals.append('Buy')
+            elif predicted_prices_df['MA_Short'].iloc[i] < predicted_prices_df['MA_Long'].iloc[i]:
+                signals.append('Sell')
+            else:
+                signals.append('Hold')
+
+    predicted_prices_df['Signal'] = signals
+
+    return predicted_prices_df
+
+def generate_trading_signals(predicted_prices, last_known_price, rsi_period=7, ma_short_period=10, ma_long_period=100,
+                             price_threshold=0.01):
+    predicted_prices_df = pd.DataFrame({'Predicted_Close': predicted_prices}, index=pd.date_range(start='today', periods=len(predicted_prices), freq='D'))
+    predicted_prices_df['RSI'] = calculate_rsi(predicted_prices_df['Predicted_Close'], periods=rsi_period)
+    predicted_prices_df['MA_Short'] = predicted_prices_df['Predicted_Close'].rolling(window=ma_short_period).mean()
+    predicted_prices_df['MA_Long'] = predicted_prices_df['Predicted_Close'].rolling(window=ma_long_period).mean()
+    predicted_prices_df['Price_Change'] = predicted_prices_df['Predicted_Close'].pct_change()
+
+    signals = []
+    for i in range(len(predicted_prices_df)):
+        if i == 0:
+            signals.append(None)
+        else:
+            if (predicted_prices_df['RSI'].iloc[i] > 70) and (
+                    predicted_prices_df['Price_Change'].iloc[i] < -price_threshold):
+                signals.append('Sell')
+            elif (predicted_prices_df['RSI'].iloc[i] < 30) and (
+                    predicted_prices_df['Price_Change'].iloc[i] > price_threshold):
+                signals.append('Buy')
+            elif predicted_prices_df['MA_Short'].iloc[i] > predicted_prices_df['MA_Long'].iloc[i] and \
+                    predicted_prices_df['Predicted_Close'].iloc[i] > predicted_prices_df['Predicted_Close'].iloc[i - 1]:
+                signals.append('Buy')
+            elif predicted_prices_df['MA_Short'].iloc[i] < predicted_prices_df['MA_Long'].iloc[i] and \
+                    predicted_prices_df['Predicted_Close'].iloc[i] < predicted_prices_df['Predicted_Close'].iloc[i - 1]:
+                signals.append('Sell')
+            elif predicted_prices_df['Predicted_Close'].iloc[i] < predicted_prices_df['Predicted_Close'].iloc[i - 1]:
+                signals.append('Sell')
+            else:
+                signals.append('Hold')
+
+    predicted_prices_df['Signal'] = signals
+    return predicted_prices_df
 
 
 # using last known price to generate signals
-def generate_prophet_trading_signals(data, last_known_price, rsi_period=14, sentiment_threshold=0.1):
-    # Calculate RSI using the 'yhat' column
-    data['RSI'] = calculate_rsi(data['yhat'], periods=rsi_period)
-
-    # Calculate Moving Averages using the 'yhat' column
-    data['MA_Short'] = data['yhat'].rolling(window=7).mean()
-    data['MA_Long'] = data['yhat'].rolling(window=30).mean()
-
-    # Generate signals based on the comparison between the last known price and the predicted price
-    # Ensure the scalar is broadcast over the Series correctly
-    data['Signal'] = np.where(
-        (last_known_price < data['yhat'] * (1 - sentiment_threshold)), 'Buy',
-        np.where(
-            (last_known_price > data['yhat'] * (1 + sentiment_threshold)), 'Sell',
-            'Hold'
-        )
-    )
-
-    return data
 
 
 # using rsi and moving averages to generate signals
-def generate_prophet1_trading_signals(forecast):
+def generate_prophet1_trading_signals(forecast, rsi_period=14, ma_short_period=7, ma_long_period=30,
+                                      price_threshold=0.01):
     # Calculate RSI on forecasted 'yhat' values
-    forecast['RSI'] = calculate_rsi(forecast['yhat'], periods=14)
+    forecast['RSI'] = calculate_rsi(forecast['yhat'], periods=rsi_period)
 
     # Calculate short-term and long-term moving averages on forecasted 'yhat' values
-    forecast['MA_Short'] = forecast['yhat'].rolling(window=7).mean()
-    forecast['MA_Long'] = forecast['yhat'].rolling(window=30).mean()
+    forecast['MA_Short'] = forecast['yhat'].rolling(window=ma_short_period).mean()
+    forecast['MA_Long'] = forecast['yhat'].rolling(window=ma_long_period).mean()
+
+    # Calculate the percentage change in forecasted prices
+    forecast['Price_Change'] = forecast['yhat'].pct_change()
 
     # Generate signals
     forecast['Signal'] = np.where(
-        (forecast['RSI'] < 30) & (forecast['MA_Short'] > forecast['MA_Long']), 'Buy',
+        (forecast['RSI'] < 30) & (forecast['Price_Change'] > price_threshold) & (
+                    forecast['MA_Short'] > forecast['MA_Long']), 'Buy',
         np.where(
-            (forecast['RSI'] > 70) & (forecast['MA_Short'] < forecast['MA_Long']), 'Sell',
-            'Hold'
+            (forecast['RSI'] > 70) & (forecast['Price_Change'] < -price_threshold) & (
+                        forecast['MA_Short'] < forecast['MA_Long']), 'Sell',
+            np.where(
+                forecast['yhat'] < forecast['yhat'].shift(1), 'Sell',
+                'Hold'
+            )
         )
     )
 
@@ -81,76 +119,6 @@ def generate_prophet1_trading_signals(forecast):
 
 
 import plotly.graph_objects as go
-
-
-def plot_forecast_with_signals(historical_data, forecast, signals):
-    # Create a figure
-    fig = go.Figure()
-
-    # Plot historical data
-    fig.add_trace(go.Scatter(
-        x=historical_data['ds'],
-        y=historical_data['y'],
-        mode='lines',
-        name='Historical Data'
-    ))
-
-    # Plot forecasted data
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat'],
-        mode='lines',
-        name='Forecasted Data',
-        line=dict(color='blue', dash='dot')  # Different style for forecast
-    ))
-
-    # Highlight the forecast intervals (optional)
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat_upper'],
-        mode='lines',
-        line=dict(width=0),
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter(
-        x=forecast['ds'],
-        y=forecast['yhat_lower'],
-        mode='lines',
-        fill='tonexty',  # fill area between trace0 and trace1
-        line=dict(width=0),
-        fillcolor='rgba(68, 68, 68, 0.3)',
-        showlegend=False
-    ))
-
-    # Adding Buy signals
-    buys = signals[signals['Signal'] == 'Buy']
-    fig.add_trace(go.Scatter(
-        x=buys['ds'],
-        y=buys['yhat'],
-        mode='markers',
-        name='Buy Signal',
-        marker=dict(color='green', size=10, symbol='triangle-up')
-    ))
-
-    # Adding Sell signals
-    sells = signals[signals['Signal'] == 'Sell']
-    fig.add_trace(go.Scatter(
-        x=sells['ds'],
-        y=sells['yhat'],
-        mode='markers',
-        name='Sell Signal',
-        marker=dict(color='red', size=10, symbol='triangle-down')
-    ))
-
-    # Add titles and labels
-    fig.update_layout(
-        title='Forecast with Trading Signals',
-        xaxis_title='Date',
-        yaxis_title='Price',
-        legend_title='Legend'
-    )
-
-    return fig
 
 
 def plot_forecast_with_signals2(forecast):
@@ -211,27 +179,39 @@ def plot_forecast_with_signals2(forecast):
 
     return fig
 
-
-def generate_arima_trading_signals(forecast_df, last_known_price, threshold=0.01):
+def generate_arima_trading_signals(forecast_df, last_known_price, rsi_period=14, threshold=0.01):
     """
     Generate trading signals based on ARIMA forecasted prices.
 
     Parameters:
     forecast_df (pd.DataFrame): A DataFrame with 'Date' and 'Forecast' columns.
     last_known_price (float): The last known price of the asset.
+    rsi_period (int): The period for calculating RSI.
     threshold (float): The threshold for determining signals.
 
     Returns:
-    pd.DataFrame: The input DataFrame with an additional 'Signal' column.
+    pd.DataFrame: The input DataFrame with additional 'RSI', 'Change', and 'Signal' columns.
     """
+    # Calculate RSI on forecasted prices
+    forecast_df['RSI'] = calculate_rsi(forecast_df['Forecast'], periods=rsi_period)
+
     # Calculate the percentage change between the forecast and the last known price
     forecast_df['Change'] = (forecast_df['Forecast'] - last_known_price) / last_known_price
 
-    # Determine signals based on the change threshold
-    forecast_df['Signal'] = forecast_df['Change'].apply(
-        lambda x: 'Buy' if x > threshold else 'Sell' if x < -threshold else 'Hold')
+    # Determine signals based on RSI, change threshold, and previous price comparison
+    forecast_df['Signal'] = np.where(
+        (forecast_df['RSI'] < 30) & (forecast_df['Change'] > threshold), 'Buy',
+        np.where(
+            (forecast_df['RSI'] > 70) & (forecast_df['Change'] < -threshold), 'Sell',
+            np.where(
+                forecast_df['Forecast'] < forecast_df['Forecast'].shift(1), 'Sell',
+                'Hold'
+            )
+        )
+    )
 
     return forecast_df
+
 
 
 def plot_arima_forecast_with_signals(arima_signals_df):
