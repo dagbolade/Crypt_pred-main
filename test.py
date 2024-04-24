@@ -1,8 +1,15 @@
+import pickle
+
 import numpy as np
 import pandas as pd
 import streamlit as st
+from catboost import CatBoostRegressor
+from keras._tf_keras import keras
 from matplotlib import pyplot as plt
 from pmdarima import auto_arima
+from scipy.stats import stats, norm
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.signal import find_peaks
 
@@ -30,7 +37,7 @@ from xgboost_model import train_xgboost_model, preprocess_data, \
 # Set up the sidebar menu
 menu_options = [
     "Overview", "About", "Data Preprocessing", "Exploratory Data Analysis",
-    "Correlation Analysis", "Prediction", "Highest Return Prediction", "Trading Metrics", "News"
+    "Correlation Analysis", "Prediction", "Highest Return Prediction", "Trading Strategy", "Trading Metrics", "News"
 ]
 menu_choice = st.sidebar.radio("Menu", menu_options)
 
@@ -245,6 +252,8 @@ def correlation_analysis():
 
 
 import plotly.graph_objs as go
+
+
 # Feature engineering with lagged features
 def create_lagged_features(data, lag_periods):
     lagged_data = data.copy()
@@ -252,6 +261,7 @@ def create_lagged_features(data, lag_periods):
         lagged_data[f'Close_lag_{lag}'] = lagged_data['Close'].shift(lag)
     lagged_data.dropna(inplace=True)
     return lagged_data
+
 
 def prediction():
     st.header("Prediction")
@@ -280,8 +290,8 @@ def prediction():
                     # reset index to make 'Date' a column
                     crypto_data = crypto_data.reset_index()
 
-                    model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-                    model, history = train_lstm_model(model, X_train, y_train, X_test, y_test)
+                    ls_model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+                    ls_model, history = train_lstm_model(ls_model, X_train, y_train, X_test, y_test)
 
                     # reset index to make 'Date' a column
                     crypto_data = crypto_data.reset_index()
@@ -294,7 +304,7 @@ def prediction():
 
                     for _ in range(days_to_predict):  # Number of days you want to predict
                         # Predict the next step and get the last predicted price
-                        current_prediction = model.predict(current_sequence)
+                        current_prediction = ls_model.predict(current_sequence)
                         last_predicted_price = scaler.inverse_transform(current_prediction).flatten()[0]
                         predictions.append(last_predicted_price)
 
@@ -374,6 +384,9 @@ def prediction():
 
                     #find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
 
+                    # Save the LSTM model to a pickle file
+                    ls_model.save('lstm_model.h5', overwrite=True)
+
 
                 elif model_choice == 'Prophet':
                     # Assuming the data is daily data
@@ -386,7 +399,7 @@ def prediction():
                     last_known_price = df_prophet['y'].iloc[-1]
 
                     # save the forecast in session state
-                    st.session_state['prophet_forecast'] = forecast['yhat'].values
+                    st.session_state['prophet_forecast'] = model
 
                     signals = generate_prophet1_trading_signals(forecast)
 
@@ -426,6 +439,10 @@ def prediction():
 
                     #find_optimal_buy_sell(ticker, forecast['yhat'], signals)
 
+                    # Save the Prophet model to a pickle file
+                    with open('prophet_model.pkl', 'wb') as file:
+                        pickle.dump(model, file)
+
                 elif model_choice == 'BI-LSTM':
                     # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
                     X, y, scaler = prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
@@ -455,7 +472,7 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
-                    st.session_state['bi_lstm_predictions'] = predicted_prices
+                    st.session_state['bi_lstm_predictions'] = bi_model
 
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
@@ -468,7 +485,7 @@ def prediction():
                     predicted_prices_df = pd.DataFrame({'Predicted_Close': predicted_prices}, index=prediction_dates)
 
                     # Generate trading signals based on the predicted prices
-                    predicted_signals = generate_trading_signals(predicted_prices_df, last_known_price)
+                    predicted_signals = generate_lstm_trading_signals(predicted_prices_df, last_known_price)
 
                     # Concatenate historical close prices with predicted prices
                     combined_data = pd.concat([crypto_data[['Close']], predicted_prices_df['Predicted_Close']])
@@ -526,6 +543,9 @@ def prediction():
 
                     # find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
 
+                    # Save the Bi-LSTM model to a pickle file
+                    bi_model.save('bi_lstm_model.h5', overwrite=True)
+
                 elif model_choice == 'ARIMA':
                     # reset index to make 'Date' a column
                     time_series_data = crypto_data.reset_index()
@@ -554,7 +574,7 @@ def prediction():
                     forecast_df = pd.DataFrame({'Date': forecast_index, 'Forecast': forecast})
 
                     # save the forecast in session state
-                    st.session_state['arima_forecast'] = forecast.values
+                    st.session_state['arima_forecast'] = model_fit
 
                     # Use the last known price for generating signals
                     last_known_price = time_series_data.iloc[-1]
@@ -601,6 +621,11 @@ def prediction():
 
                     #find_optimal_buy_sell(ticker, forecast, arima_signals_df
 
+                    # Save the ARIMA model to a pickle file
+                    with open('arima_model.pkl', 'wb') as file:
+                        pickle.dump(model_fit, file)
+
+
                 elif model_choice == 'RandomForest':
                     from sklearn.ensemble import RandomForestRegressor
 
@@ -619,11 +644,11 @@ def prediction():
                     y = lagged_data[target]
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-                    model = RandomForestRegressor(n_estimators=100, random_state=42)
-                    model.fit(X_train, y_train)
+                    rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+                    rf_model.fit(X_train, y_train)
 
                     future_data = lagged_data[features].tail(days_to_predict)
-                    future_predictions = model.predict(future_data)
+                    future_predictions = rf_model.predict(future_data)
 
                     # Display the predicted prices for the next days
                     st.write(f"Predicted prices for the next {days_to_predict} days with Random Forest:")
@@ -667,6 +692,14 @@ def prediction():
                     else:
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
+                    # save the forecast in session state
+                    st.session_state['random_forest_forecast'] = rf_model
+
+                    # Save the Random Forest model to a pickle file
+                    with open('random_forest_model.pkl', 'wb') as file:
+                        pickle.dump(rf_model, file)
+
+
                 elif model_choice == 'CatBoost':
                     from catboost import CatBoostRegressor
 
@@ -685,11 +718,11 @@ def prediction():
                     y = lagged_data[target]
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-                    model = CatBoostRegressor(iterations=100, learning_rate=0.1, random_seed=42)
-                    model.fit(X_train, y_train)
+                    cat_model = CatBoostRegressor(iterations=100, learning_rate=0.1, random_seed=42)
+                    cat_model.fit(X_train, y_train)
 
                     future_data = lagged_data[features].tail(days_to_predict)
-                    future_predictions = model.predict(future_data)
+                    future_predictions = cat_model.predict(future_data)
 
                     # Display the predicted prices for the next days
                     st.write(f"Predicted prices for the next {days_to_predict} days with CatBoost:")
@@ -732,6 +765,13 @@ def prediction():
                             f"Investment Advice: Consider selling {ticker} based on the predicted price decrease.")
                     else:
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
+
+                    # save the forecast in session state
+                    st.session_state['catboost_forecast'] = cat_model
+
+                    # Save the CatBoost model to a pickle file
+                    with open('catboost_model.pkl', 'wb') as file:
+                        pickle.dump(cat_model, file)
 
 
     else:
@@ -837,7 +877,8 @@ def highest_return_prediction():
         selected_cryptos_full = st.session_state['selected_cryptos_full']
 
         # Allowing user to select a model
-        model_choice = st.selectbox('Select Prediction Model', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA'])
+        model_choice = st.selectbox('Select Prediction Model',
+                                    ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
 
         # User input for selecting cryptocurrencies
         selected_tickers = st.multiselect('Select Cryptocurrencies for Prediction:',
@@ -930,6 +971,44 @@ def highest_return_prediction():
                         forecast = predict_arima(model_fit, days_to_predict)
                         predicted_prices = forecast
 
+                    elif model_choice == 'RandomForest':
+                        features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
+                        target = 'Close'
+                        preprocessed_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
+
+                        lag_periods = [1, 2, 3, 4, 5]
+                        lagged_data = create_lagged_features(preprocessed_data, lag_periods)
+                        features += [f'Close_lag_{lag}' for lag in lag_periods]
+
+                        X = lagged_data[features]
+                        y = lagged_data[target]
+                        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                        model = RandomForestRegressor(n_estimators=100, random_state=42)
+                        model.fit(X_train, y_train)
+                        future_data = lagged_data[features].tail(days_to_predict)
+                        future_predictions = model.predict(future_data)
+                        predicted_prices = np.array(future_predictions)
+
+                    elif model_choice == 'CatBoost':
+                        features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
+                        target = 'Close'
+                        preprocessed_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
+
+                        lag_periods = [1, 2, 3, 4, 5]
+                        lagged_data = create_lagged_features(preprocessed_data, lag_periods)
+                        features += [f'Close_lag_{lag}' for lag in lag_periods]
+
+                        X = lagged_data[features]
+                        y = lagged_data[target]
+                        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+                        model = CatBoostRegressor(iterations=100, learning_rate=0.1, random_seed=42)
+                        model.fit(X_train, y_train)
+                        future_data = lagged_data[features].tail(days_to_predict)
+                        future_predictions = model.predict(future_data)
+                        predicted_prices = np.array(future_predictions)
+
                     # Calculate the predicted return for the selected cryptocurrency
                     predicted_return = (predicted_prices[-1] - predicted_prices[0]) / predicted_prices[0] * 100
                     predicted_returns[ticker] = predicted_return
@@ -947,8 +1026,156 @@ def highest_return_prediction():
                 for ticker, return_percentage in predicted_returns.items():
                     st.write(f"{ticker}: {return_percentage:.2f}%")
 
+
+
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")
+
+
+# calculate the trading metrics
+def trading_metrics():
+    pass
+
+    #trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
+
+
+def calculate_ema(data, window):
+    return data.ewm(span=window, adjust=False).mean()
+
+
+def calculate_sharpe_ratio(returns, risk_free_rate=0.02):
+    return (returns.mean() - risk_free_rate) / returns.std()
+
+
+def calculate_sortino_ratio(returns, risk_free_rate=0.02):
+    downside_returns = returns.copy()
+    downside_returns[returns > 0] = 0
+    expected_return = returns.mean()
+    downside_std = downside_returns.std()
+    return (expected_return - risk_free_rate) / downside_std
+
+
+def calculate_max_drawdown(returns):
+    cumulative_returns = (1 + returns).cumprod()
+    peak = cumulative_returns.expanding(min_periods=1).max()
+    drawdown = (cumulative_returns / peak) - 1
+    return drawdown.min()
+
+
+def trading_strategy():
+    st.header("Trading Strategy")
+
+    if 'selected_cryptos_full' in st.session_state:
+        selected_cryptos_full = st.session_state['selected_cryptos_full']
+        unique_tickers = selected_cryptos_full['Ticker'].unique()
+        ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
+
+        # User input for selecting the date range
+        start_date = st.date_input('Select start date', selected_cryptos_full['Date'].min())
+        end_date = st.date_input('Select end date', selected_cryptos_full['Date'].max())
+
+        # Convert the start_date and end_date to datetime format
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+
+        # Filter the data based on the selected date range
+        crypto_data = selected_cryptos_full[(selected_cryptos_full['Ticker'] == ticker) &
+                                            (selected_cryptos_full['Date'] >= start_date) &
+                                            (selected_cryptos_full['Date'] <= end_date)]
+
+        # User input for selecting the trading strategy
+        strategy = st.selectbox('Select Trading Strategy', ['Simple Moving Average (SMA) Crossover',
+                                                            'Exponential Moving Average (EMA) Crossover'])
+
+        if strategy == 'Simple Moving Average (SMA) Crossover':
+            # User input for selecting the short and long window periods
+            short_window = st.number_input('Enter the short window period for SMA:', min_value=1, max_value=50,
+                                           value=10)
+            long_window = st.number_input('Enter the long window period for SMA:', min_value=50, max_value=200,
+                                          value=50)
+
+            # Calculate the short and long moving averages
+            crypto_data['SMA_Short'] = crypto_data['Close'].rolling(window=short_window, min_periods=1).mean()
+            crypto_data['SMA_Long'] = crypto_data['Close'].rolling(window=long_window, min_periods=1).mean()
+
+            # Generate trading signals based on the crossover strategy
+            crypto_data['Signal'] = np.where(crypto_data['SMA_Short'] > crypto_data['SMA_Long'], 'Buy', 'Sell')
+            crypto_data['Signal'] = np.where(crypto_data['SMA_Short'] == crypto_data['SMA_Long'], 'Hold',
+                                             crypto_data['Signal'])
+
+        elif strategy == 'Exponential Moving Average (EMA) Crossover':
+            # User input for selecting the short and long window periods
+            short_window = st.number_input('Enter the short window period for EMA:', min_value=1, max_value=50,
+                                           value=10)
+            long_window = st.number_input('Enter the long window period for EMA:', min_value=50, max_value=200,
+                                          value=50)
+
+            # Calculate the short and long exponential moving averages
+            crypto_data['EMA_Short'] = calculate_ema(crypto_data['Close'], window=short_window)
+            crypto_data['EMA_Long'] = calculate_ema(crypto_data['Close'], window=long_window)
+
+            # Generate trading signals based on the crossover strategy
+            crypto_data['Signal'] = np.where(crypto_data['EMA_Short'] > crypto_data['EMA_Long'], 'Buy', 'Sell')
+            crypto_data['Signal'] = np.where(crypto_data['EMA_Short'] == crypto_data['EMA_Long'], 'Hold',
+                                             crypto_data['Signal'])
+
+        # Calculate the daily returns
+        crypto_data['Return'] = crypto_data['Close'].pct_change()
+
+        # Calculate the strategy returns
+        crypto_data['Strategy_Return'] = crypto_data['Return'] * (crypto_data['Signal'].shift(1) == 'Buy').astype(int)
+
+        # Calculate the cumulative returns
+        crypto_data['Cumulative_Returns'] = (1 + crypto_data['Strategy_Return']).cumprod()
+
+        # Display the trading signals and strategy returns
+        st.write("Trading Signals and Strategy Returns:")
+        st.dataframe(crypto_data[['Date', 'Close', 'Signal', 'Return', 'Strategy_Return', 'Cumulative_Returns']])
+
+        # Plot the strategy returns
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Close'], mode='lines', name='Close Price'))
+        fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Cumulative_Returns'], mode='lines',
+                                 name='Cumulative Returns'))
+        fig.update_layout(title=f"{ticker} - {strategy}", xaxis_title='Date', yaxis_title='Price')
+        st.plotly_chart(fig)
+
+        # Stop loss and take profit
+        stop_loss = st.number_input('Enter the Stop Loss Percentage:', min_value=0.0, max_value=100.0, value=5.0,
+                                    step=0.1)
+        take_profit = st.number_input('Enter the Take Profit Percentage:', min_value=0.0, max_value=100.0, value=5.0,
+                                      step=0.1)
+
+        # Calculate the stop loss and take profit levels
+        crypto_data['Stop_Loss'] = crypto_data['Close'] * (1 - stop_loss / 100)
+        crypto_data['Take_Profit'] = crypto_data['Close'] * (1 + take_profit / 100)
+
+        # Display the stop loss and take profit levels
+        st.write("Stop Loss and Take Profit Levels:")
+        st.dataframe(crypto_data[['Date', 'Close', 'Stop_Loss', 'Take_Profit']])
+
+        # Plot the stop loss and take profit levels
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Close'], mode='lines', name='Close Price'))
+        fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Stop_Loss'], mode='lines', name='Stop Loss',
+                                 line=dict(color='red', dash='dash')))
+        fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Take_Profit'], mode='lines', name='Take Profit',
+                                 line=dict(color='green', dash='dash')))
+        fig.update_layout(title=f"{ticker} - Stop Loss and Take Profit Levels", xaxis_title='Date', yaxis_title='Price')
+        st.plotly_chart(fig)
+
+        # Performance metrics
+        sharpe_ratio = calculate_sharpe_ratio(crypto_data['Strategy_Return'])
+        sortino_ratio = calculate_sortino_ratio(crypto_data['Strategy_Return'])
+        max_drawdown = calculate_max_drawdown(crypto_data['Strategy_Return'])
+
+        st.write("Performance Metrics:")
+        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+        st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
+        st.write(f"Maximum Drawdown: {max_drawdown:.2%}")
+
+    else:
+        st.error("Please load and preprocess the cryptocurrency data first.")
 
 
 # Conditional navigation based on sidebar choice
@@ -966,5 +1193,9 @@ elif menu_choice == "Prediction":
     prediction()
 elif menu_choice == "Highest Return Prediction":
     highest_return_prediction()
+elif menu_choice == "Trading Metrics":
+    trading_metrics()
+elif menu_choice == "Trading Strategy":
+    trading_strategy()
 elif menu_choice == "News":
     news_page(API_KEY)
