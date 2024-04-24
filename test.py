@@ -165,6 +165,11 @@ def data_preprocessing():
         st.write("Selected Cryptos Full Details with Feature Engineering:")
         st.write(selected_cryptos_full)
 
+        # covert to datetime and set as index in selected cryptos full
+        selected_cryptos_full = convert_to_datetime(selected_cryptos_full, 'Date').set_index('Date')
+        st.write("Selected Cryptos Full Details with Feature Engineering:")
+        st.write(selected_cryptos_full)
+
         # Store in session state
         st.session_state['selected_cryptos'] = selected_cryptos
         st.session_state['daily_returns'] = daily_returns
@@ -656,6 +661,9 @@ def prediction():
                         st.write(f"Day {i}: {price:.2f}")
 
                     predicted_prices = np.array(future_predictions)
+                    # Reset the index and rename the 'index' column to 'Date'
+                    preprocessed_data.reset_index(inplace=True)
+                    preprocessed_data.rename(columns={'index': 'Date'}, inplace=True)
                     # Calculate the prediction dates starting from the day after the last date in the data
                     last_date = preprocessed_data['Date'].iloc[-1]
                     prediction_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days_to_predict)
@@ -702,11 +710,9 @@ def prediction():
 
                 elif model_choice == 'CatBoost':
                     from catboost import CatBoostRegressor
-
                     features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
                     target = 'Close'
                     preprocessed_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
-
                     # Create lagged features
                     lag_periods = [1, 2, 3, 4, 5]  # Adjust the lag periods as needed
                     lagged_data = create_lagged_features(preprocessed_data, lag_periods)
@@ -730,6 +736,12 @@ def prediction():
                         st.write(f"Day {i}: {price:.2f}")
 
                     predicted_prices = np.array(future_predictions)
+                    # Reset the index and rename the 'index' column to 'Date'
+                    preprocessed_data.reset_index(inplace=True)
+                    preprocessed_data.rename(columns={'index': 'Date'}, inplace=True)
+
+                    preprocessed_data['Date'] = pd.to_datetime(preprocessed_data['Date'])
+
                     # Calculate the prediction dates starting from the day after the last date in the data
                     last_date = preprocessed_data['Date'].iloc[-1]
                     prediction_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days_to_predict)
@@ -1036,7 +1048,8 @@ def highest_return_prediction():
 def trading_metrics():
     pass
 
-    #trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
+
+#trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
 
 
 def calculate_ema(data, window):
@@ -1070,6 +1083,13 @@ def trading_strategy():
         unique_tickers = selected_cryptos_full['Ticker'].unique()
         ticker = st.selectbox('Select a Cryptocurrency', unique_tickers)
 
+        # Convert the index to datetime format
+        selected_cryptos_full = selected_cryptos_full.reset_index()
+
+        # Convert the 'Date' column to datetime format and filter out invalid dates
+        selected_cryptos_full['Date'] = pd.to_datetime(selected_cryptos_full['Date'], errors='coerce')
+        selected_cryptos_full = selected_cryptos_full[selected_cryptos_full['Date'].notnull()]
+
         # User input for selecting the date range
         start_date = st.date_input('Select start date', selected_cryptos_full['Date'].min())
         end_date = st.date_input('Select end date', selected_cryptos_full['Date'].max())
@@ -1089,9 +1109,9 @@ def trading_strategy():
 
         if strategy == 'Simple Moving Average (SMA) Crossover':
             # User input for selecting the short and long window periods
-            short_window = st.number_input('Enter the short window period for SMA:', min_value=1, max_value=50,
+            short_window = st.number_input('Enter the short window period for SMA:', min_value=1, max_value=100,
                                            value=10)
-            long_window = st.number_input('Enter the long window period for SMA:', min_value=50, max_value=200,
+            long_window = st.number_input('Enter the long window period for SMA:', min_value=50, max_value=500,
                                           value=50)
 
             # Calculate the short and long moving averages
@@ -1173,6 +1193,62 @@ def trading_strategy():
         st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
         st.write(f"Sortino Ratio: {sortino_ratio:.2f}")
         st.write(f"Maximum Drawdown: {max_drawdown:.2%}")
+
+        # User input for selecting the prediction method
+        prediction_method = st.selectbox('Select Prediction Method', ['Use Trading Strategy', 'Use Trained Model'])
+
+        if prediction_method == 'Use Trading Strategy':
+            # User input for the number of days to predict
+            predict_days = st.number_input('Enter the number of days to predict:', min_value=1, value=30, step=1)
+
+            # Generate future dates for prediction
+            last_date = crypto_data['Date'].max()
+            future_dates = pd.date_range(start=last_date, periods=predict_days + 1, freq='D')[1:]
+
+            # Create a new DataFrame for future predictions
+            future_data = pd.DataFrame({'Date': future_dates})
+            future_data = pd.concat([crypto_data.tail(1), future_data], ignore_index=True)
+
+            # Calculate the moving averages for future dates
+            if strategy == 'Simple Moving Average (SMA) Crossover':
+                future_data['SMA_Short'] = future_data['Close'].rolling(window=short_window, min_periods=1).mean()
+                future_data['SMA_Long'] = future_data['Close'].rolling(window=long_window, min_periods=1).mean()
+                future_data['Signal'] = np.where(future_data['SMA_Short'] > future_data['SMA_Long'], 'Buy', 'Sell')
+                future_data['Signal'] = np.where(future_data['SMA_Short'] == future_data['SMA_Long'], 'Hold',
+                                                 future_data['Signal'])
+            elif strategy == 'Exponential Moving Average (EMA) Crossover':
+                future_data['EMA_Short'] = future_data['Close'].ewm(span=short_window, adjust=False).mean()
+                future_data['EMA_Long'] = future_data['Close'].ewm(span=long_window, adjust=False).mean()
+                future_data['Signal'] = np.where(future_data['EMA_Short'] > future_data['EMA_Long'], 'Buy', 'Sell')
+                future_data['Signal'] = np.where(future_data['EMA_Short'] == future_data['EMA_Long'], 'Hold',
+                                                 future_data['Signal'])
+
+            # predict the future prices
+            future_data['Return'] = future_data['Close'].pct_change()
+            future_data['Strategy_Return'] = future_data['Return'] * (future_data['Signal'].shift(1) == 'Buy').astype(
+                int)
+            future_data['Cumulative_Returns'] = (1 + future_data['Strategy_Return']).cumprod()
+
+            # Display the future predictions
+            st.write("Future Predictions:")
+            st.dataframe(future_data[['Date', 'Close', 'Signal', 'Return', 'Strategy_Return', 'Cumulative_Returns']])
+
+            # Plot the future predictions with interactive technical analysis
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=crypto_data['Date'], y=crypto_data['Close'], mode='lines', name='Close Price'))
+            fig.add_trace(go.Scatter(x=future_data['Date'], y=future_data['Close'], mode='lines', name='Future Price'))
+            fig.update_layout(title=f"{ticker} - Future Predictions with {strategy}", xaxis_title='Date',
+                              yaxis_title='Price')
+
+            # Add interactive tools for technical analysis
+            fig.update_layout(
+                dragmode='drawline',
+                newshape=dict(line_color='yellow'),
+                modebar=dict(orientation='v'),
+                xaxis=dict(rangeslider=dict(visible=True))
+            )
+
+            st.plotly_chart(fig)
 
     else:
         st.error("Please load and preprocess the cryptocurrency data first.")
