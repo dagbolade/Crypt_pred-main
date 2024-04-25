@@ -66,16 +66,3 @@ def show_overview():
 def show_about():
     st.header("About")
     st.write("This section provides information about the app and its functionalities.")
-
-
-import plotly.graph_objs as go
-
-
-
-
-
-
-# calculate the trading metrics
-
-#trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
-
