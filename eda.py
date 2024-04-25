@@ -86,7 +86,7 @@ def plot_rolling_statistics(data, ticker, window=30):
 #     fig = plt.gcf()  # Getting the current figure
 #     plt.close()  # Close the plot to prevent it from displaying in non-Streamlit environments
 #     return fig
-    #plt.show()
+#plt.show()
 
 
 def plot_boxplot(data, ticker):
@@ -154,8 +154,6 @@ def plot_kde_of_closes(data, selected_cryptos):
     fig = plt.gcf()  # Getting the current figure
     plt.close()  # Close the plot to prevent it from displaying in non-Streamlit environments
     return fig
-
-
 
 
 def plot_candlestick_with_signals_and_ma(data, ticker):

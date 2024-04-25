@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from pmdarima import auto_arima
 from scipy.stats import stats, norm
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error, accuracy_score
 from sklearn.model_selection import train_test_split
 from scipy.signal import find_peaks
 
@@ -27,6 +27,7 @@ from eda import plot_time_series, plot_rolling_statistics, plot_boxplot, plot_ca
 from feature_engineering import calculate_sma_ema_rsi
 from lstm_model import prepare_lstm_data, build_lstm_model, train_lstm_model
 from prophet_model import prepare_data_for_prophet, train_prophet_model, plot_forecast
+from trading_metrics import calculate_sharpe_ratio, calculate_max_drawdown, calculate_sortino_ratio
 from trading_signals import generate_trading_signals, \
     generate_prophet1_trading_signals, plot_forecast_with_signals2, generate_arima_trading_signals, \
     plot_arima_forecast_with_signals, generate_lstm_trading_signals
@@ -37,7 +38,7 @@ from xgboost_model import train_xgboost_model, preprocess_data, \
 # Set up the sidebar menu
 menu_options = [
     "Overview", "About", "Data Preprocessing", "Exploratory Data Analysis",
-    "Correlation Analysis", "Prediction", "Highest Return Prediction", "Trading Strategy", "Trading Metrics", "News"
+    "Correlation Analysis", "Prediction", "Highest Return Prediction", "Trading Strategy", "News"
 ]
 menu_choice = st.sidebar.radio("Menu", menu_options)
 
@@ -268,6 +269,30 @@ def create_lagged_features(data, lag_periods):
     return lagged_data
 
 
+def buy_sell_analysis(selected_tickers, predicted_prices, days_to_predict, investment_amount):
+    for ticker in selected_tickers:
+        st.subheader(f"Predicted Prices for {ticker}")
+        predicted_prices_df = pd.DataFrame({"Date": pd.date_range(start=pd.Timestamp.today(), periods=days_to_predict), "Predicted_Price": predicted_prices})
+        st.write(predicted_prices_df)
+
+        # Calculate potential profit or loss
+        buy_price = predicted_prices_df["Predicted_Price"].min()
+        sell_price = predicted_prices_df["Predicted_Price"].max()
+        potential_profit = (sell_price - buy_price) * (investment_amount / buy_price)
+        potential_loss = (buy_price - sell_price) * (investment_amount / buy_price)
+
+        st.write(f"Investing ${investment_amount:.2f} in {ticker}:")
+        if potential_profit > 0:
+            st.write(f"Potential Profit: ${potential_profit:.2f}")
+            st.write(f"Best Time to Buy: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == buy_price]['Date'].values[0]}")
+        else:
+            st.write(f"Potential Loss: ${potential_loss:.2f}")
+            st.write(f"Best Time to Sell: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == sell_price]['Date'].values[0]}")
+
+        st.write("---")
+
+    st.success("Analysis Complete!")
+
 def prediction():
     st.header("Prediction")
 
@@ -281,6 +306,10 @@ def prediction():
         # User input for selecting cryptocurrency
         ticker = st.selectbox('Select a Cryptocurrency for Prediction:', selected_cryptos_full['Ticker'].unique())
         days_to_predict = st.number_input('Enter the number of days to predict:', min_value=1, max_value=365, value=30)
+
+        # Investment amount input
+        investment_amount = st.number_input("Enter your investment amount (e.g., $100):", min_value=1.0, value=100.0,
+                                            step=1.0)
 
         # Filter data for the selected cryptocurrency
         crypto_data = selected_cryptos_full[selected_cryptos_full['Ticker'] == ticker]
@@ -318,7 +347,7 @@ def prediction():
                         current_sequence[0, -1, :] = current_prediction.flatten()
 
                     predicted_prices = np.array(predictions)
-                    st.session_state['lstm_predictions'] = predicted_prices
+                    st.session_state['lstm_model'] = predicted_prices
 
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
@@ -387,8 +416,11 @@ def prediction():
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
-                    #find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
+                    # store prediced prices in session state and predicted signals
+                    st.session_state['predicted_prices'] = predicted_prices
+                    st.session_state['predicted_signals'] = predicted_signals
 
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
                     # Save the LSTM model to a pickle file
                     ls_model.save('lstm_model.h5', overwrite=True)
 
@@ -399,12 +431,13 @@ def prediction():
                     model = train_prophet_model(df_prophet)
                     future = model.make_future_dataframe(periods=days_to_predict)
                     forecast = model.predict(future)
+                    predicted_prices = forecast['yhat'].values[-days_to_predict:]
 
                     # Get the last known price from historical data
                     last_known_price = df_prophet['y'].iloc[-1]
 
                     # save the forecast in session state
-                    st.session_state['prophet_forecast'] = model
+                    st.session_state['prophet_model'] = model
 
                     signals = generate_prophet1_trading_signals(forecast)
 
@@ -441,8 +474,11 @@ def prediction():
                         st.error(f"🔴 Sell Advice: Consider selling {ticker}.")
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
+                    # save the forecast in session state and the signals
+                    st.session_state['forecast'] = forecast
+                    st.session_state['signals'] = signals
 
-                    #find_optimal_buy_sell(ticker, forecast['yhat'], signals)
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
 
                     # Save the Prophet model to a pickle file
                     with open('prophet_model.pkl', 'wb') as file:
@@ -477,7 +513,7 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
-                    st.session_state['bi_lstm_predictions'] = bi_model
+                    st.session_state['bi_lstm_model'] = bi_model
 
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
@@ -546,8 +582,7 @@ def prediction():
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
-                    # find_optimal_buy_sell(ticker, predicted_prices, predicted_signals)
-
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
                     # Save the Bi-LSTM model to a pickle file
                     bi_model.save('bi_lstm_model.h5', overwrite=True)
 
@@ -579,7 +614,7 @@ def prediction():
                     forecast_df = pd.DataFrame({'Date': forecast_index, 'Forecast': forecast})
 
                     # save the forecast in session state
-                    st.session_state['arima_forecast'] = model_fit
+                    st.session_state['arima_model'] = model_fit
 
                     # Use the last known price for generating signals
                     last_known_price = time_series_data.iloc[-1]
@@ -624,7 +659,7 @@ def prediction():
 
                     predicted_prices = forecast_df['Forecast'].values
 
-                    #find_optimal_buy_sell(ticker, forecast, arima_signals_df
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
 
                     # Save the ARIMA model to a pickle file
                     with open('arima_model.pkl', 'wb') as file:
@@ -700,8 +735,7 @@ def prediction():
                     else:
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
-                    # save the forecast in session state
-                    st.session_state['random_forest_forecast'] = rf_model
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
 
                     # Save the Random Forest model to a pickle file
                     with open('random_forest_model.pkl', 'wb') as file:
@@ -778,8 +812,8 @@ def prediction():
                     else:
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
-                    # save the forecast in session state
-                    st.session_state['catboost_forecast'] = cat_model
+                    # Call the best_time_to_buy function
+                    buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
 
                     # Save the CatBoost model to a pickle file
                     with open('catboost_model.pkl', 'wb') as file:
@@ -845,41 +879,6 @@ def news_page(api_key):
             display_news(articles)
     else:
         st.error("Cryptocurrency data is not loaded. Please load the data to proceed.")
-
-
-def find_optimal_buy_sell(ticker, predicted_prices, predicted_signals):
-    optimal_buy_date = None
-    optimal_sell_date = None
-    optimal_profit = -float('inf')  # Initialize with a very low value
-
-    buy_price = None
-    sell_price = None
-
-    for i in range(len(predicted_prices)):
-        if predicted_signals['Signal'].iloc[i] == 'Buy':
-            buy_price = predicted_prices[i]
-            buy_date = predicted_signals.index[i]
-
-        elif predicted_signals['Signal'].iloc[i] == 'Sell' and buy_price is not None:
-            sell_price = predicted_prices[i]
-            sell_date = predicted_signals.index[i]
-
-            potential_profit = sell_price - buy_price
-            if potential_profit > optimal_profit:
-                optimal_profit = potential_profit
-                optimal_buy_date = buy_date
-                optimal_sell_date = sell_date
-
-            buy_price = None
-            sell_price = None
-
-    if optimal_buy_date and optimal_sell_date:
-        st.write(f"For {ticker}:")
-        st.write(f"Optimal Buy Date: {optimal_buy_date}")
-        st.write(f"Optimal Sell Date: {optimal_sell_date}")
-        st.write(f"Anticipated Profit: ${optimal_profit:.2f}")
-    else:
-        st.write(f"No profitable buy-sell opportunity found for {ticker} during the prediction period.")
 
 
 def highest_return_prediction():
@@ -1038,41 +1037,19 @@ def highest_return_prediction():
                 for ticker, return_percentage in predicted_returns.items():
                     st.write(f"{ticker}: {return_percentage:.2f}%")
 
-
-
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")
 
 
 # calculate the trading metrics
-def trading_metrics():
-    pass
-
 
 #trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
 
 
+
+
 def calculate_ema(data, window):
     return data.ewm(span=window, adjust=False).mean()
-
-
-def calculate_sharpe_ratio(returns, risk_free_rate=0.02):
-    return (returns.mean() - risk_free_rate) / returns.std()
-
-
-def calculate_sortino_ratio(returns, risk_free_rate=0.02):
-    downside_returns = returns.copy()
-    downside_returns[returns > 0] = 0
-    expected_return = returns.mean()
-    downside_std = downside_returns.std()
-    return (expected_return - risk_free_rate) / downside_std
-
-
-def calculate_max_drawdown(returns):
-    cumulative_returns = (1 + returns).cumprod()
-    peak = cumulative_returns.expanding(min_periods=1).max()
-    drawdown = (cumulative_returns / peak) - 1
-    return drawdown.min()
 
 
 def trading_strategy():
@@ -1269,8 +1246,6 @@ elif menu_choice == "Prediction":
     prediction()
 elif menu_choice == "Highest Return Prediction":
     highest_return_prediction()
-elif menu_choice == "Trading Metrics":
-    trading_metrics()
 elif menu_choice == "Trading Strategy":
     trading_strategy()
 elif menu_choice == "News":
