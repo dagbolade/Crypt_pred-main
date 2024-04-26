@@ -35,7 +35,8 @@ from trading_signals import generate_trading_signals, \
 from xgboost_model import train_xgboost_model, preprocess_data, \
     forecast_xgboost
 
-from app.pages import data_preprocessing, eda, prediction, highest_return, trading_strategy, news, correlation
+from app.pages import data_preprocessing, eda, prediction, highest_return, trading_strategy, news, correlation, \
+    desired_profit
 
 
 def main():
@@ -45,6 +46,7 @@ def main():
         "Correlation Analysis": correlation.correlation_page,
         "Exploratory Data Analysis": eda.eda_page,
         "Prediction": prediction.prediction_page,
+        "Desired Profit": desired_profit.desired_profit_page,
         "Highest Return Prediction": highest_return.highest_return_page,
         "Trading Strategy": trading_strategy.trading_strategy_page,
         "News": news.news_page  # Call the news_page function from the news module
