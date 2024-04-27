@@ -32,8 +32,8 @@ def desired_profit_page():
         days_to_predict = st.number_input('Enter the number of days to predict:', min_value=1, max_value=365, value=30)
 
         # User input for specifying the desired profit amount
-        desired_profit = st.number_input('Enter the desired profit amount:', min_value=0.0, step=1.0)
-        initial_investment = st.number_input('Enter the initial investment amount:', min_value=1.0, step=1.0)
+        desired_profit = st.number_input('Enter the desired profit amount: ($)', min_value=0.0, step=1.0)
+        initial_investment = st.number_input('Enter the initial investment amount: ($)', min_value=1.0, step=1.0)
 
         if st.button('Predict Desired Profit'):
             with st.spinner(f'Training {model_choice} model and making predictions...'):
@@ -163,20 +163,33 @@ def desired_profit_page():
                     price_change = (predicted_prices[-1] - predicted_prices[0]) / predicted_prices[0]
                     final_value = initial_investment * (1 + price_change)
                     predicted_profit = final_value - initial_investment
+                    predicted_profits[ticker] = predicted_profit
 
-                    if predicted_profit >= desired_profit:
-                        predicted_profits[ticker] = predicted_profit
+                # Find the cryptocurrencies that meet or exceed the desired profit target
+                meeting_profits = {ticker: profit for ticker, profit in predicted_profits.items() if
+                                   profit >= desired_profit}
 
-                    # Sort the meeting profits in descending order
-                sorted_meeting_profits = sorted(predicted_profits.items(), key=lambda x: x[1], reverse=True)
-
-                if sorted_meeting_profits:
+                if meeting_profits:
                     st.success(
-                        f"Based on the {model_choice} model predictions for the next {days_to_predict} days, the following cryptocurrencies meet or exceed your desired profit target of {desired_profit:.2f} with an initial investment of {initial_investment:.2f} (sorted in descending order):")
+                        f"The following cryptocurrencies meet or exceed your desired profit target of {desired_profit:.2f} with an initial investment of {initial_investment:.2f} (sorted in descending order):")
+                    sorted_meeting_profits = sorted(meeting_profits.items(), key=lambda x: x[1], reverse=True)
                     for ticker, profit in sorted_meeting_profits:
                         st.write(f"{ticker}: {profit:.2f}")
                 else:
                     st.warning(
                         f"Based on the {model_choice} model predictions, no cryptocurrency meets your desired profit target of {desired_profit:.2f} with an initial investment of {initial_investment:.2f}.")
+
+                st.write(
+                    f"Predicted profits or losses for all selected cryptocurrencies with an initial investment of ${initial_investment:.2f}:")
+                sorted_predicted_profits = sorted(predicted_profits.items(), key=lambda x: x[1], reverse=True)
+                for ticker, profit in sorted_predicted_profits:
+                    if profit >= 0:
+                        st.success(f"{ticker}: ${profit:.2f} (Profit)")
+                    else:
+                        st.error(f"{ticker}: ${profit:.2f} (Loss)")
+
+                # Assuming you have a function to calculate the accuracy level
+               # accuracy_level = calculate_accuracy_level(model_choice, predicted_profits)
+                #st.write(f"Accuracy level of the {model_choice} model predictions: {accuracy_level:.2%}")
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")

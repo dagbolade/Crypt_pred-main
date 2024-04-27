@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 from matplotlib import pyplot as plt
 
+import bi_lstm_model
 from Data_loader import load_data
 from data_preprocessing import convert_to_datetime, check_missing_values, fill_missing_values
 from data_transformation import remove_duplicates, pivot_and_fill, scale_data
@@ -20,7 +21,7 @@ from lstm_model import prepare_lstm_data, build_lstm_model, train_lstm_model, ev
 from sklearn.model_selection import train_test_split
 from feature_engineering import calculate_sma_ema_rsi
 from random_forest_model import prepare_data, train_random_forest, predict_and_evaluate, plot_rf_predictions, \
-    train_custom_model_for_BTC, create_btc_features
+    train_custom_model_for_BTC
 from svr_module import preprocess_data, train_svr, evaluate_svr, plot_svr_predictions
 from bi_lstm_model import prepare_bi_lstm_data, \
     plot_bi_predictions, build_bi_lstm_model, train_bi_lstm_model, evaluate_bi_lstm_model
@@ -280,7 +281,7 @@ for ticker in selected_cryptos_full['Ticker'].unique():
 trained_models = {}
 evaluation_metrics = {}
 
-# Main processing loop
+#Main processing loop
 
 
 # for ticker, df in selected_cryptos_full.groupby('Ticker'):
@@ -321,3 +322,8 @@ evaluation_metrics = {}
 #     print("Mean Absolute Error:", mae)
 #     print("Root Mean Squared Error:", rmse)
 #     print("R-squared:", r2)
+
+
+
+
+

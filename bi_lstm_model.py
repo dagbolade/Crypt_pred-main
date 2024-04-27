@@ -44,7 +44,7 @@ def build_bi_lstm_model(input_shape):
     return bi_model
 
 
-def train_bi_lstm_model(bi_model, X_train, y_train, X_test, y_test,):
+def train_bi_lstm_model(bi_model, X_train, y_train, X_test, y_test, ):
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     history = bi_model.fit(X_train, y_train, epochs=100, batch_size=64,
                            validation_data=(X_test, y_test), verbose=1,
@@ -64,6 +64,11 @@ def evaluate_bi_lstm_model(bi_model, X_test, y_test, scaler):
     r2 = r2_score(y_test_inv, y_pred_inv)
 
     return mse, mae, rmse, r2
+
+
+# save the model
+def save_bi_lstm_model(bi_model, model_path):
+    bi_model.save(model_path)
 
 
 def plot_history(history, ticker):

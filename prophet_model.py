@@ -3,7 +3,7 @@ from prophet.diagnostics import cross_validation, performance_metrics
 from prophet.plot import plot_cross_validation_metric
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import numpy as np
 
 
@@ -38,22 +38,23 @@ def evaluate_prophet_model(df_prophet, combined):
     if 'ds' not in df_prophet.columns:
         # set 'ds' as column
         df_prophet.reset_index(inplace=True)
-    #if 'ds' not in combined.columns:
+        #if 'ds' not in combined.columns:
         # set 'ds' as column
         combined.reset_index(inplace=True)
 
     last_date_in_actual = df_prophet['ds'].max()
     historical_forecast = combined[(combined['ds'] <= last_date_in_actual)]
     actuals = df_prophet[df_prophet['ds'] <= last_date_in_actual]['y']
-
     mse = mean_squared_error(actuals, historical_forecast['yhat'])
+    mae = mean_absolute_error(actuals, historical_forecast['yhat'])
     rmse = np.sqrt(mse)
     r_squared = r2_score(actuals, historical_forecast['yhat'])
 
     metrics = {
         'MSE': mse,
+        'MAE': mae,
         'RMSE': rmse,
-        'R-squared': r_squared
+        'R2': r_squared
     }
     return metrics
 

@@ -1,5 +1,6 @@
 import pickle
 
+import h5py
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -439,6 +440,7 @@ def prediction():
                     # save the forecast in session state
                     st.session_state['prophet_model'] = model
 
+
                     signals = generate_prophet1_trading_signals(forecast)
 
                     # Display the forecast and signals
@@ -513,7 +515,8 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
-                    st.session_state['bi_lstm_model'] = bi_model
+                    # save th model in h5 or pkl
+                    bi_model.save('bi_lstm_model_new.h5')
 
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]

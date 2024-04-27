@@ -36,7 +36,7 @@ from xgboost_model import train_xgboost_model, preprocess_data, \
     forecast_xgboost
 
 from app.pages import data_preprocessing, eda, prediction, highest_return, trading_strategy, news, correlation, \
-    desired_profit
+    desired_profit, model_evalaution
 
 
 def main():
@@ -49,7 +49,8 @@ def main():
         "Desired Profit": desired_profit.desired_profit_page,
         "Highest Return Prediction": highest_return.highest_return_page,
         "Trading Strategy": trading_strategy.trading_strategy_page,
-        "News": news.news_page  # Call the news_page function from the news module
+        "News": news.news_page, # Call the news_page function from the news module,
+        "Model Evaluation": model_evalaution.model_evaluation_page,
     }
 
     selection = st.sidebar.radio("Go to", list(pages.keys()))
