@@ -91,7 +91,7 @@ def main():
                        layout="wide")
 
     # Set the background image
-    #set_background('app/assets/background.jpg')
+    set_background('app/assets/background.jpg')
     # Apply custom styles to the sidebar
     st.markdown(
         """
