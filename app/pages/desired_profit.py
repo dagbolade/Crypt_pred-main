@@ -10,13 +10,13 @@ from lstm_model import prepare_lstm_data, build_lstm_model, train_lstm_model
 from prophet_model import train_prophet_model, prepare_data_for_prophet
 
 
-
 def create_lagged_features(data, lag_periods):
     lagged_data = data.copy()
     for lag in lag_periods:
         lagged_data[f'Close_lag_{lag}'] = lagged_data['Close'].shift(lag)
     lagged_data.dropna(inplace=True)
     return lagged_data
+
 
 def desired_profit_page():
     st.header("Desired Profit Prediction")
@@ -25,10 +25,12 @@ def desired_profit_page():
         selected_cryptos_full = st.session_state['selected_cryptos_full']
 
         # Allowing user to select a model
-        model_choice = st.selectbox('Select Prediction Model', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
+        model_choice = st.selectbox('Select Prediction Model',
+                                    ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
 
         # User input for selecting cryptocurrencies
-        selected_tickers = st.multiselect('Select Cryptocurrencies for Prediction:', selected_cryptos_full['Ticker'].unique())
+        selected_tickers = st.multiselect('Select Cryptocurrencies for Prediction:',
+                                          selected_cryptos_full['Ticker'].unique())
         days_to_predict = st.number_input('Enter the number of days to predict:', min_value=1, max_value=365, value=30)
 
         # User input for specifying the desired profit amount
@@ -189,7 +191,7 @@ def desired_profit_page():
                         st.error(f"{ticker}: ${profit:.2f} (Loss)")
 
                 # Assuming you have a function to calculate the accuracy level
-               # accuracy_level = calculate_accuracy_level(model_choice, predicted_profits)
-                #st.write(f"Accuracy level of the {model_choice} model predictions: {accuracy_level:.2%}")
+            # accuracy_level = calculate_accuracy_level(model_choice, predicted_profits)
+            #st.write(f"Accuracy level of the {model_choice} model predictions: {accuracy_level:.2%}")
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")

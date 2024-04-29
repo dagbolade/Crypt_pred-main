@@ -16,7 +16,7 @@ class CryptoDataDownloader:
         all_crypto_data = pd.DataFrame()
 
         if self.start_date is None or self.end_date is None:
-            self.start_date = datetime.datetime.now() - datetime.timedelta(days=831)  # Default to last year
+            self.start_date = datetime.datetime.now() - datetime.timedelta(days=831)
             self.end_date = datetime.datetime.now()
 
         for ticker in self.tickers:
@@ -46,7 +46,6 @@ if __name__ == "__main__":
         'FIL-USD', 'TRX-USD', 'EOS-USD', 'THETA-USD', 'XMR-USD', 'NEO-USD', 'AAVE-USD', 'ATOM-USD', 'WIF-USD', 'BONK'
                                                                                                                '-USD', 'SHIB-USD', 'SOL-USD',
         'DGB-USD', 'CHZ-USD', 'ENJ-USD', 'MANA-USD', 'BAT-USD', 'SAND-USD',
-
     ]
 
     downloader = CryptoDataDownloader(crypto_tickers)

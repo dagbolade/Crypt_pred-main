@@ -30,7 +30,7 @@ def model_evaluation_page():
                                           selected_cryptos_full['Ticker'].unique())
 
         # User input for selecting models to evaluate
-        model_options = ['LSTM', 'Bi-LSTM', 'Prophet', 'ARIMA', 'Random Forest', 'CatBoost']
+        model_options = ['LSTM', 'Prophet', 'ARIMA', 'Random Forest', 'CatBoost']
         selected_models = st.multiselect('Select Models to Evaluate:', model_options)
 
         if st.button('Evaluate Models'):
@@ -61,18 +61,6 @@ def model_evaluation_page():
                         except Exception as e:
                             st.warning(f"Error loading LSTM model: {e}. Skipping evaluation.")
 
-                    if 'Bi-LSTM' in selected_models:
-                        try:
-                            bi_lstm_model = load_model('bi_lstm_model.h5')
-                            X, y, scaler = prepare_lstm_data(test_data, 'Close', sequence_length=60)
-                            X_test, _, y_test, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
-                            bi_lstm_mse, bi_lstm_mae, bi_lstm_rmse, bi_lstm_r2 = evaluate_bi_lstm_model(bi_lstm_model,
-                                                                                                        X_test, y_test,
-                                                                                                        scaler)
-                            evaluation_results[ticker]['Bi-LSTM'] = {'MSE': bi_lstm_mse, 'MAE': bi_lstm_mae,
-                                                                     'RMSE': bi_lstm_rmse, 'R2': bi_lstm_r2}
-                        except Exception as e:
-                            st.warning(f"Error loading Bi-LSTM model: {e}. Skipping evaluation.")
 
                     if 'Prophet' in selected_models:
                         df_prophet = prepare_data_for_prophet(train_data, ticker)

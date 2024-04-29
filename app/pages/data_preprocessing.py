@@ -27,7 +27,7 @@ def data_preprocessing_page():
     # Use top_30_cryptos as default in multiselect
     selected_tickers = st.sidebar.multiselect('Select Cryptocurrencies, 30 cryptos have been added by default', options=all_cryptos, default=all_cryptos)
 
-    start_date = st.sidebar.date_input('Start Date', value=pd.to_datetime('2022-01-01'))
+    start_date = st.sidebar.date_input('Start Date', value=pd.to_datetime('2020-01-01'))
     end_date = st.sidebar.date_input('End Date', value=pd.to_datetime('today'))
     interval = st.sidebar.selectbox('Select Interval', options=['1d', '1wk', '1mo'], index=0)
     download_button = st.sidebar.button('Download Data')

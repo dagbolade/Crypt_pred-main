@@ -273,7 +273,8 @@ def create_lagged_features(data, lag_periods):
 def buy_sell_analysis(selected_tickers, predicted_prices, days_to_predict, investment_amount):
     for ticker in selected_tickers:
         st.subheader(f"Predicted Prices for {ticker}")
-        predicted_prices_df = pd.DataFrame({"Date": pd.date_range(start=pd.Timestamp.today(), periods=days_to_predict), "Predicted_Price": predicted_prices})
+        predicted_prices_df = pd.DataFrame({"Date": pd.date_range(start=pd.Timestamp.today(), periods=days_to_predict),
+                                            "Predicted_Price": predicted_prices})
         st.write(predicted_prices_df)
 
         # Calculate potential profit or loss
@@ -285,14 +286,17 @@ def buy_sell_analysis(selected_tickers, predicted_prices, days_to_predict, inves
         st.write(f"Investing ${investment_amount:.2f} in {ticker}:")
         if potential_profit > 0:
             st.write(f"Potential Profit: ${potential_profit:.2f}")
-            st.write(f"Best Time to Buy: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == buy_price]['Date'].values[0]}")
+            st.write(
+                f"Best Time to Buy: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == buy_price]['Date'].values[0]}")
         else:
             st.write(f"Potential Loss: ${potential_loss:.2f}")
-            st.write(f"Best Time to Sell: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == sell_price]['Date'].values[0]}")
+            st.write(
+                f"Best Time to Sell: {predicted_prices_df[predicted_prices_df['Predicted_Price'] == sell_price]['Date'].values[0]}")
 
         st.write("---")
 
     st.success("Analysis Complete!")
+
 
 def prediction():
     st.header("Prediction")
@@ -440,7 +444,6 @@ def prediction():
                     # save the forecast in session state
                     st.session_state['prophet_model'] = model
 
-
                     signals = generate_prophet1_trading_signals(forecast)
 
                     # Display the forecast and signals
@@ -515,8 +518,6 @@ def prediction():
 
                     predicted_prices = np.array(predictions)
 
-                    # save th model in h5 or pkl
-                    bi_model.save('bi_lstm_model_new.h5')
 
                     # Get the last known price from the historical data
                     last_known_price = scaler.inverse_transform(X_test[-1:, -1, 0].reshape(-1, 1)).flatten()[0]
@@ -973,6 +974,8 @@ def highest_return_prediction():
                             current_sequence[:, -1, :] = current_prediction
                         predicted_prices = np.array(predictions)
 
+
+
                     elif model_choice == 'ARIMA':
 
                         time_series_data = crypto_data.reset_index()
@@ -1047,8 +1050,6 @@ def highest_return_prediction():
 # calculate the trading metrics
 
 #trading strategy using cross-over strategy and set stop loss and take profit allowing user to input the values
-
-
 
 
 def calculate_ema(data, window):
