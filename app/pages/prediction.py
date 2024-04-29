@@ -55,7 +55,9 @@ def buy_sell_analysis(selected_tickers, predicted_prices, days_to_predict, inves
     st.write("Please note that this analysis is based on the predicted prices and does not guarantee future performance.")
 
 def prediction_page():
-    st.header("Prediction")
+    st.header("Prediction for Cryptocurrencies")
+    st.info("""The 4 main models used for prediction are: LSTM, Prophet, Random Forest, and CatBoost, while the other trained 
+    models are ARIMA and BI-LSTM. """)
 
     if 'selected_cryptos_full' in st.session_state:
         selected_cryptos_full = st.session_state['selected_cryptos_full']
