@@ -1,3 +1,4 @@
+import base64
 import pickle
 
 import numpy as np
@@ -32,12 +33,12 @@ from trading_signals import generate_trading_signals, \
     generate_prophet1_trading_signals, plot_forecast_with_signals2, generate_arima_trading_signals, \
     plot_arima_forecast_with_signals, generate_lstm_trading_signals
 
-
 from app.pages import data_preprocessing, eda, prediction, highest_return, trading_strategy, news, correlation, \
     desired_profit, model_evalaution
 
 
 def show_overview():
+
     st.title("Cryptocurrency Analysis Dashboard")
     st.write("Welcome to the Cryptocurrency Analysis Dashboard!")
     st.write("This dashboard provides various tools and insights for analyzing cryptocurrency data.")
@@ -46,7 +47,9 @@ def show_overview():
 
 def show_about():
     st.title("About")
-    st.write("This Cryptocurrency Analysis Dashboard is designed to help users of SoliGence analyze and visualize cryptocurrency data.")
+    st.write(
+        "This Cryptocurrency Analysis Dashboard is designed to help users of SoliGence analyze and visualize "
+        "cryptocurrency data.")
     st.write("The app provides the following functionalities:")
     st.write("- Data Preprocessing: Clean and prepare cryptocurrency data for analysis.")
     st.write("- Correlation Analysis: Examine the correlations between different cryptocurrencies.")
@@ -59,7 +62,52 @@ def show_about():
     st.write("- Model Evaluation: Evaluate the performance of machine learning models used for predictions.")
 
 
+def get_base64(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+
+def set_background(jpg_file):
+    bin_str = get_base64(jpg_file)
+    page_bg_img = f'''
+    <style>
+    .stApp {{
+      background-image: url("data:image/jpg;base64,{bin_str}");
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      background-color: #f5f5f5;
+    }}
+    </style>
+    '''
+    st.markdown(page_bg_img, unsafe_allow_html=True)
+
+
 def main():
+    # Set page configuration
+    st.set_page_config(page_title="Cryptocurrency Analysis Dashboard", page_icon=":chart_with_upwards_trend:",
+                       layout="wide")
+
+    # Set the background image
+    set_background('app/assets/background.jpg')
+    # Apply custom styles to the sidebar
+    st.markdown(
+        """
+        <style>
+        .sidebar .sidebar-content {
+            color: white;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Add your logo to the sidebar
+    logo_path = "https://www.solent.ac.uk/graphics/logo/rebrandLogo.svg"
+    st.sidebar.image(logo_path, width=150)
+
     st.sidebar.title("Navigation")
     pages = {
         "Overview": show_overview,
