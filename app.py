@@ -32,16 +32,38 @@ from trading_signals import generate_trading_signals, \
     generate_prophet1_trading_signals, plot_forecast_with_signals2, generate_arima_trading_signals, \
     plot_arima_forecast_with_signals, generate_lstm_trading_signals
 
-from xgboost_model import train_xgboost_model, preprocess_data, \
-    forecast_xgboost
 
 from app.pages import data_preprocessing, eda, prediction, highest_return, trading_strategy, news, correlation, \
     desired_profit, model_evalaution
 
 
+def show_overview():
+    st.title("Cryptocurrency Analysis Dashboard")
+    st.write("Welcome to the Cryptocurrency Analysis Dashboard!")
+    st.write("This dashboard provides various tools and insights for analyzing cryptocurrency data.")
+    st.write("Use the sidebar navigation to explore different sections of the app.")
+
+
+def show_about():
+    st.title("About")
+    st.write("This Cryptocurrency Analysis Dashboard is designed to help users of SoliGence analyze and visualize cryptocurrency data.")
+    st.write("The app provides the following functionalities:")
+    st.write("- Data Preprocessing: Clean and prepare cryptocurrency data for analysis.")
+    st.write("- Correlation Analysis: Examine the correlations between different cryptocurrencies.")
+    st.write("- Exploratory Data Analysis: Perform exploratory analysis and visualize cryptocurrency data.")
+    st.write("- Prediction: Predict future prices of cryptocurrencies using machine learning models.")
+    st.write("- Desired Profit: Calculate the required investment to achieve a desired profit.")
+    st.write("- Highest Return Prediction: Identify cryptocurrencies with the highest potential return.")
+    st.write("- Trading Strategy: Develop and backtest trading strategies for cryptocurrencies.")
+    st.write("- News: Stay updated with the latest news and articles related to cryptocurrencies.")
+    st.write("- Model Evaluation: Evaluate the performance of machine learning models used for predictions.")
+
+
 def main():
-    st.sidebar.title("Cryptocurrency Analysis")
+    st.sidebar.title("Navigation")
     pages = {
+        "Overview": show_overview,
+        "About": show_about,
         "Data Preprocessing": data_preprocessing.data_preprocessing_page,
         "Correlation Analysis": correlation.correlation_page,
         "Exploratory Data Analysis": eda.eda_page,
@@ -49,7 +71,7 @@ def main():
         "Desired Profit": desired_profit.desired_profit_page,
         "Highest Return Prediction": highest_return.highest_return_page,
         "Trading Strategy": trading_strategy.trading_strategy_page,
-        "News": news.news_page, # Call the news_page function from the news module,
+        "News": news.news_page,
         "Model Evaluation": model_evalaution.model_evaluation_page,
     }
 
@@ -59,13 +81,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-def show_overview():
-    st.header("Overview")
-    st.write("Welcome to the Cryptocurrency Analysis Dashboard!")
-
-
-def show_about():
-    st.header("About")
-    st.write("This section provides information about the app and its functionalities.")

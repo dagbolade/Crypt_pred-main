@@ -181,7 +181,7 @@ def prediction_page():
 
 
                 elif model_choice == 'Prophet':
-                    # Assuming the data is daily data
+                    # Prepare the data for Prophet
                     df_prophet = prophet_model.prepare_data_for_prophet(crypto_data, ticker)
                     model = prophet_model.train_prophet_model(df_prophet)
                     future = model.make_future_dataframe(periods=days_to_predict)
