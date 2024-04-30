@@ -39,7 +39,7 @@ from app.pages import data_preprocessing, eda, prediction, highest_return, tradi
 
 def show_overview():
 
-    st.title("Cryptocurrency Analysis Dashboard")
+    st.title("Intelligent Coin Trading Platform")
     st.write("Welcome to the Cryptocurrency Analysis Dashboard!")
     st.write("This dashboard provides various tools and insights for analyzing cryptocurrency data.")
     st.write("Use the sidebar navigation to explore different sections of the app.")
