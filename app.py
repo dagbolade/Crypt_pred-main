@@ -79,6 +79,7 @@ def set_background(jpg_file):
       background-attachment: fixed;
       background-repeat: no-repeat;
       background-color: #f5f5f5;
+      
     }}
     </style>
     '''
@@ -104,7 +105,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Add your logo to the sidebar
+    # Adding solent logo to the sidebar
     logo_path = "https://www.solent.ac.uk/graphics/logo/rebrandLogo.svg"
     st.sidebar.image(logo_path, width=150)
 
