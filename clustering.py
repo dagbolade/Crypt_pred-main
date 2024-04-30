@@ -100,6 +100,5 @@ def select_cryptos_closest_to_centroids(data, clusters, cluster_centers):
 
     selected = data.iloc[closest_indices]
 
-    selected['Cluster'] = clusters[closest_indices]
+    selected.loc[:, 'Cluster'] = clusters[closest_indices]
     return selected
-

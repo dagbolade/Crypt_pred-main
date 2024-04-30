@@ -13,7 +13,7 @@ def calculate_daily_returns(crypto_data):
     Returns:
     DataFrame: Daily returns of cryptocurrencies.
     """
-    daily_returns = crypto_data.pivot_table(index='Date', columns='Ticker', values='Close').pct_change().dropna()
+    daily_returns = crypto_data.pivot_table(index='Date', columns='Ticker', values='Close').pct_change(fill_method=None).dropna()
     return daily_returns
 
 
