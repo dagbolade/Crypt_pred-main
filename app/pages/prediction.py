@@ -5,17 +5,20 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
 import plotly.graph_objects as go
+from keras.src.metrics.accuracy_metrics import accuracy
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import accuracy_score, r2_score
 from sklearn.model_selection import train_test_split
 
 import arima
 import lstm_model
 import prophet_model
 from arima import predict_arima
-from bi_lstm_model import train_bi_lstm_model
+from bi_lstm_model import train_bi_lstm_model, build_bi_lstm_model
 from lstm_model import train_lstm_model
 from trading_signals import generate_trading_signals, plot_arima_forecast_with_signals, generate_arima_trading_signals, \
     generate_lstm_trading_signals, plot_forecast_with_signals2, generate_prophet1_trading_signals
+
 
 # creating lagged features for catboost and random forest
 def create_lagged_features(data, lag_periods):
@@ -52,7 +55,9 @@ def buy_sell_analysis(selected_tickers, predicted_prices, days_to_predict, inves
         st.write("---")
 
     st.success("Analysis Complete!")
-    st.write("Please note that this analysis is based on the predicted prices and does not guarantee future performance.")
+    st.write(
+        "Please note that this analysis is based on the predicted prices and does not guarantee future performance.")
+
 
 def prediction_page():
     st.header("Prediction for Cryptocurrencies")
@@ -63,7 +68,8 @@ def prediction_page():
         selected_cryptos_full = st.session_state['selected_cryptos_full']
 
         # Allowing user to select a model
-        model_choice = st.selectbox('Select Prediction Model', ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
+        model_choice = st.selectbox('Select Prediction Model',
+                                    ['LSTM', 'Prophet', 'BI-LSTM', 'ARIMA', 'RandomForest', 'CatBoost'])
 
         # User input for selecting cryptocurrency
         ticker = st.selectbox('Select a Cryptocurrency for Prediction:', selected_cryptos_full['Ticker'].unique())
@@ -179,8 +185,12 @@ def prediction_page():
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
+                    # Show the confidence of the model in percentage using r2
 
-
+                    actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+                    predicted_prices_test = scaler.inverse_transform(ls_model.predict(X_test)).flatten()
+                    r2 = r2_score(actual_prices, predicted_prices_test)
+                    st.write(f"Model Confidence Level : {r2 * 100:.2f}%")
 
                 elif model_choice == 'Prophet':
                     # Prepare the data for Prophet
@@ -189,40 +199,28 @@ def prediction_page():
                     future = model.make_future_dataframe(periods=days_to_predict)
                     forecast = model.predict(future)
                     predicted_prices = forecast['yhat'].values[-days_to_predict:]
-
                     # Get the last known price from historical data
                     last_known_price = df_prophet['y'].iloc[-1]
-
-                    # save the forecast in session state
+                    # Save the forecast in session state
                     st.session_state['prophet_model'] = model
-
                     signals = generate_prophet1_trading_signals(forecast)
-
                     # Display the forecast and signals
                     st.write("Prophet forecast and trading signals for the next {} days:".format(days_to_predict))
                     st.write(forecast[['ds', 'yhat']].tail(days_to_predict))
                     st.write(signals[['ds', 'RSI', 'MA_Short', 'MA_Long', 'Signal']].tail(days_to_predict))
-
                     # Optionally, plot the results
                     fig = plot_forecast_with_signals2(signals)
                     st.info("""
                                             **Trading Signals Explained:**
-
                                             - **Buy Signal**: Indicated by the Short Moving Average (MA Short) crossing above the Long Moving Average (MA Long), suggesting the asset may be entering an uptrend.
-
                                             - **Sell Signal**: Given when the MA Short crosses below the MA Long, indicating a potential downtrend.
-
                                             - **Hold**: No crossovers and the price is relatively stable within the averages, suggesting to maintain the current position without making new trades.
-
                                             _Note: These signals are used in technical analysis but do not guarantee future performance and should not be the only factor considered when making investment decisions.
                                             So in other words, this is not financial advice. Do your own research before investing.
                                         """)
-
                     st.plotly_chart(fig, use_container_width=True)
-
-                    # display the last day od the prediction only
+                    # Display the last day of the prediction only
                     st.write(f"The predicted price for day {days_to_predict} is ${forecast['yhat'].iloc[-1]:.2f}")
-
                     # Determine the latest signal and give trading advice
                     latest_signal = signals['Signal'].iloc[-1]
                     if latest_signal == 'Buy':
@@ -231,18 +229,26 @@ def prediction_page():
                         st.error(f"🔴 Sell Advice: Consider selling {ticker}.")
                     else:
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
-                    # save the forecast in session state and the signals
+                    # Save the forecast and signals in session state
                     st.session_state['forecast'] = forecast
                     st.session_state['signals'] = signals
-
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
+                    # Get the common dates between df_prophet and forecast
+                    common_dates = pd.Index(np.intersect1d(df_prophet['ds'], forecast['ds']))
+                    # Get the actual values for the common dates
+                    actual_values = df_prophet.set_index('ds').loc[common_dates, 'y'].values
+                    # Get the predicted values for the common dates
+                    predicted_values = forecast.set_index('ds').loc[common_dates, 'yhat'].values
+                    # Calculate R-squared (R²)
+                    r2 = r2_score(actual_values, predicted_values)
+                    st.write(f"Model Confidence Level : {r2 * 100:.2f}%")
 
                 elif model_choice == 'BI-LSTM':
                     # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
                     X, y, scaler = lstm_model.prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-                    bi_model = lstm_model.build_bi_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+                    bi_model = build_bi_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
                     bi_model, history = train_bi_lstm_model(bi_model, X_train, y_train, X_test, y_test)
 
                     # reset index to make 'Date' a column
@@ -336,6 +342,11 @@ def prediction_page():
                         st.info(f"🔵 Hold Advice: Maintain your position in {ticker}.")
 
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
+                    # Show the confidence of the model in percentage
+                    actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+                    predicted_prices_test = scaler.inverse_transform(bi_model.predict(X_test)).flatten()
+                    r2 = r2_score(actual_prices, predicted_prices_test)
+                    st.write(f"Model Confidence Level : {r2 * 100:.2f}%")
 
                 elif model_choice == 'ARIMA':
                     # reset index to make 'Date' a column
@@ -408,6 +419,7 @@ def prediction_page():
 
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
 
+
                 elif model_choice == 'RandomForest':
                     features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
                     target = 'Close'
@@ -477,6 +489,8 @@ def prediction_page():
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
+                    accuracy = rf_model.score(X_test, y_test)
+                    st.write(f"Model Accuracy: {accuracy:.2f}%")
 
                 elif model_choice == 'CatBoost':
                     features = ['Open', 'High', 'Low', 'Volume', 'SMA', 'EMA', 'RSI']
@@ -550,6 +564,9 @@ def prediction_page():
                         st.info(f"Investment Advice: Hold {ticker} as no significant price change is predicted.")
 
                     buy_sell_analysis([ticker], predicted_prices, days_to_predict, investment_amount)
+                    # Show the accuracy of the model
+                    accuracy = cat_model.score(X_test, y_test)
+                    st.write(f"Model Accuracy: {accuracy:.2f}%")
 
 
     else:
