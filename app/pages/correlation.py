@@ -7,6 +7,7 @@ import correlation
 
 
 def correlation_page():
+    st.header("Correlation Analysis")
     if 'selected_cryptos' in st.session_state and 'daily_returns' in st.session_state:
         selected_cryptos = st.session_state['selected_cryptos']
         daily_returns = st.session_state['daily_returns']
@@ -23,5 +24,6 @@ def correlation_page():
             st.write(f"Top correlations for {ticker}")
             st.write("Positive Correlations:", correlation_data['Positive'])
             st.write("Negative Correlations:", correlation_data['Negative'])
+
     else:
         st.error("Data not available. Please run the preprocessing first.")
