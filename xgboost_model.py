@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 
 
 def preprocess_data(data, features, target):
-    # Assuming that 'Date' is not part of 'features'
+
     X = data[features]
     y = data[target]
     scaler = StandardScaler().fit(X)
@@ -43,7 +43,7 @@ def forecast_xgboost(model, scaler, last_known_features, days):
         # Store the prediction
         future_predictions.append(current_pred[0])
 
-        # Assume next day's features are the same as last known (naive approach)
+
         features_for_prediction = np.array([current_pred[0], current_pred[0], current_pred[0], last_known_features[-1]])
 
     # Reshape predictions to match the scaler's expected input

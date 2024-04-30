@@ -244,7 +244,7 @@ def prediction_page():
                     st.write(f"Model Confidence Level : {r2 * 100:.2f}%")
 
                 elif model_choice == 'BI-LSTM':
-                    # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
+                    # preparing the data
                     X, y, scaler = lstm_model.prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 

@@ -190,8 +190,7 @@ def desired_profit_page():
                     else:
                         st.error(f"{ticker}: ${profit:.2f} (Loss)")
 
-                # Assuming you have a function to calculate the accuracy level
-            # accuracy_level = calculate_accuracy_level(model_choice, predicted_profits)
-            #st.write(f"Accuracy level of the {model_choice} model predictions: {accuracy_level:.2%}")
+
+
     else:
         st.error("Please ensure the cryptocurrency data is loaded and preprocessed.")

@@ -322,7 +322,7 @@ def prediction():
         if st.button('Predict'):
             with st.spinner(f'Training {model_choice} model and making predictions...'):
                 if model_choice == 'LSTM':
-                    # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
+
                     X, y, scaler = prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
@@ -431,7 +431,7 @@ def prediction():
 
 
                 elif model_choice == 'Prophet':
-                    # Assuming the data is daily data
+
                     df_prophet = prepare_data_for_prophet(crypto_data, ticker)
                     model = train_prophet_model(df_prophet)
                     future = model.make_future_dataframe(periods=days_to_predict)
@@ -490,7 +490,7 @@ def prediction():
                         pickle.dump(model, file)
 
                 elif model_choice == 'BI-LSTM':
-                    # Assuming the prepare_lstm_data and other model functions are adjusted to handle data appropriately
+
                     X, y, scaler = prepare_lstm_data(crypto_data, 'Close', sequence_length=60)
                     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
