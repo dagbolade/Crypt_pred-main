@@ -22,7 +22,7 @@ def data_preprocessing_page():
 
     # Sidebar for user inputs
     st.sidebar.header('Download Settings')
-    all_cryptos = ['BNB-USD', 'ADA-USD', 'XRP-USD', 'DOGE-USD', 'DOT-USD', 'UNI-USD', 'BTC-USD', 'BCH-USD', 'LTC-USD', 'ETH-USD', 'LINK-USD', 'XLM-USD', 'USDC-USD', 'USDT-USD', 'VET-USD', 'ETC-USD', 'FIL-USD', 'TRX-USD', 'EOS-USD', 'THETA-USD', 'XMR-USD', 'NEO-USD', 'AAVE-USD', 'ATOM-USD', 'WIF-USD', 'BONK-USD', 'SHIB-USD', 'SOL-USD', 'DGB-USD', 'CHZ-USD']
+    all_cryptos = ['BNB-USD', 'ADA-USD', 'XRP-USD', 'DOGE-USD', 'DOT-USD', 'UNI-USD', 'BTC-USD', 'BCH-USD', 'LTC-USD', 'ETH-USD', 'LINK-USD', 'XLM-USD', 'USDC-USD', 'USDT-USD', 'VET-USD', 'ETC-USD', 'FIL-USD', 'TRX-USD', 'EOS-USD', 'THETA-USD', 'XMR-USD', 'NEO-USD', 'AAVE-USD', 'ATOM-USD', 'WIF-USD', 'BONK-USD', 'SHIB-USD', 'SOL-USD', 'DGB-USD', 'CHZ-USD','CAW30402-USD']
 
     # Use top_30_cryptos as default in multiselect
     selected_tickers = st.sidebar.multiselect('Select Cryptocurrencies, 30 cryptos have been added by default', options=all_cryptos, default=all_cryptos)
